@@ -1,0 +1,41 @@
+Instrucciones para crear tablas y datos en la base de datos "movies"
+
+1. Descomprimir archivo zip con scripts para Postgres
+
+2. Abrir una consola (cmd en Windows o terminal en MacOS)
+
+- Ir a la carpeta con los scripts
+cd <carpeta> 
+
+3. Abrir psql
+
+psql
+
+3.1 Crear data base movies:
+
+postgres=# CREATE DATABASE movies;
+
+Verificar que exista con \l
+
+3.2 Encoding
+
+En la consola de psql, ejecutar:
+
+chcp 65001
+set PGCLIENTENCODING=UTF8
+
+-- Cerrar la consola:
+
+\q
+
+4. Ejecutar scripts SQL
+
+En Windows.
+
+psql --single-transaction -d movies -U postgres -f 00_load_all.sql
+
+
+En MacOS.
+Cambiar el nombre del usuario en <usuario>
+
+psql --single-transaction -d movies -U <usuario> -f 00_load_all.sql
