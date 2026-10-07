@@ -1,17 +1,18 @@
 {
   "name": "movieweb",
   "version": "1.0.0",
-  "description": "Trabajo Práctico MovieWeb - Bases de Datos Austral",
-  "main": "app.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node app.js",
-    "dev:setup": "node scripts/setup.js"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
-    "dotenv": "^16.6.1",
-    "ejs": "^3.1.10",
-    "express": "^4.22.3",
-    "mongodb": "^6.21.0",
-    "pg": "^8.23.1"
+    "dotenv": "^16.4.5",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "pg": "^8.16.3"
   }
 }

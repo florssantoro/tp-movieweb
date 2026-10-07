@@ -1,24 +1,33 @@
-<!doctype html>
-<html lang="es">
+<!DOCTYPE html>
+<html>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title><%= persona.person_name %> - MovieWeb</title>
-  <link rel="stylesheet" href="/styles.css">
+    <title>Películas dirigidas por <%= directorName %></title>
+    <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <header class="site-header"><a class="brand" href="/">MovieWeb</a></header>
-  <main class="container">
-    <a class="back-link" href="/">Inicio</a>
-    <h1><%= persona.person_name %></h1>
-    <h2>Peliculas como director</h2>
-    <% if (peliculas.length) { %>
-      <ul class="result-list">
-        <% peliculas.forEach((pelicula) => { %>
-          <li><a href="/pelicula/<%= pelicula.movie_id %>"><%= pelicula.title %></a></li>
-        <% }); %>
-      </ul>
-    <% } else { %><p>No hay peliculas registradas.</p><% } %>
-  </main>
+<h1>Películas dirigidas por <%= directorName %></h1>
+<ul>
+    <% movies.sort((a, b) => new Date(b.release_date) - new Date(a.release_date)).forEach((movie) => { %>
+        <li><a href="/pelicula/<%= movie.movie_id %>"><%= movie.title %> (<%= new Date(movie.release_date).getFullYear() %>)</a></li>
+    <% }); %>
+</ul>
+<p></p>
+<div id="inicio"><a href="/">Inicio</a></div>
+
+<script>
+    const coll = document.getElementsByClassName('collapsible');
+    for (let i = 0; i < coll.length; i++) {
+        coll[i].addEventListener('click', function () {
+            this.classList.toggle('active');
+            const content = this.nextElementSibling;
+            if (content.style.display === 'block') {
+                content.style.display = 'none';
+            } else {
+                content.style.display = 'block';
+            }
+        });
+    }
+</script>
+
 </body>
 </html>
