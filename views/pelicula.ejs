@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title><%= movie.title %> - MovieWeb</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/">MovieWeb</a></header>
+  <main class="container">
+    <a class="back-link" href="/">Inicio</a>
+    <div class="movie-layout">
+      <% if (tmdbData && tmdbData.poster_path) { %>
+        <img class="poster" src="https://image.tmdb.org/t/p/w500<%= tmdbData.poster_path %>" alt="Poster de <%= movie.title %>">
+      <% } %>
+      <div>
+        <h1><%= movie.title %></h1>
+        <% if (movie.release_date) { %><p class="muted"><%= new Date(movie.release_date).getFullYear() %></p><% } %>
+        <% if (movie.tagline) { %><p><em><%= movie.tagline %></em></p><% } %>
+        <p><%= movie.overview || (tmdbData && tmdbData.overview) || 'Sin sinopsis disponible.' %></p>
+        <% if (tmdbData && tmdbData.homepage) { %><p><a href="<%= tmdbData.homepage %>" rel="noopener noreferrer" target="_blank">Sitio oficial</a></p><% } %>
+      </div>
+    </div>
+    <section>
+      <h2>Directores</h2>
+      <% if (directores.length) { %>
+        <ul class="result-list"><% directores.forEach((director) => { %><li><a href="/director/<%= director.person_id %>"><%= director.person_name %></a></li><% }); %></ul>
+      <% } else { %><p class="muted">Sin datos de direccion.</p><% } %>
+    </section>
+    <section>
+      <h2>Elenco</h2>
+      <% if (actores.length) { %>
+        <ul class="result-list"><% actores.forEach((actor) => { %><li><a href="/actor/<%= actor.person_id %>"><%= actor.person_name %></a><% if (actor.character_name) { %><span class="muted"> · <%= actor.character_name %></span><% } %></li><% }); %></ul>
+      <% } else { %><p class="muted">Sin datos de elenco.</p><% } %>
+    </section>
+    <% const trailer = tmdbData && tmdbData.videos && tmdbData.videos.results && tmdbData.videos.results.find((video) => video.site === 'YouTube' && video.type === 'Trailer'); %>
+    <% if (trailer) { %>
+      <section><h2>Trailer</h2><p><a href="https://www.youtube.com/watch?v=<%= trailer.key %>" rel="noopener noreferrer" target="_blank">Ver trailer</a></p></section>
+    <% } %>
+    <% if (tmdbData) { %>
+      <section class="credits">
+        <h2>Creditos</h2>
+        <a href="https://www.themoviedb.org/" rel="noopener noreferrer" target="_blank"><img src="/tmdb-logo.svg" alt="TMDB" width="90"></a>
+        <p class="attribution">This website uses TMDB and the TMDB APIs but is not endorsed, certified, or otherwise approved by TMDB.</p>
+      </section>
+    <% } %>
+  </main>
+</body>
+</html>

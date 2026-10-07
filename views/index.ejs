@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MovieWeb</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header"><a class="brand" href="/">MovieWeb</a></header>
+  <main class="container home">
+    <h1>Explora el cine</h1>
+    <form class="search-form" action="/buscar" method="get">
+      <label for="q">Pelicula, actor o director</label>
+      <div class="search-row">
+        <input id="q" name="q" type="search" required autofocus placeholder="Buscar...">
+        <button type="submit">Buscar</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

@@ -3,8 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const path = require('path');
 const pool = require('./db');
-const { connectMongo } = require('./mongo');
-const { getMovieDetailsByTitle } = require('./services/tmdbService');
+const { getMovieDetailsById } = require('./services/tmdbService');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +13,7 @@ app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
 
 // -------------------------------------------------------------
 // 1. PÁGINA PRINCIPAL
@@ -128,10 +128,32 @@ app.get('/pelicula/:id', async (req, res) => {
 
     const movie = dbRes.rows[0];
 
-    // Enriquecer con TMDB usando el título
-    const tmdbData = await getMovieDetailsByTitle(movie.title);
+    const [directorsRes, castRes] = await Promise.all([
+      pool.query(`
+        SELECT DISTINCT p.person_id, p.person_name
+        FROM movie_crew mc
+        JOIN person p ON p.person_id = mc.person_id
+        WHERE mc.movie_id = $1 AND mc.job = 'Director'
+        ORDER BY p.person_name
+      `, [movieId]),
+      pool.query(`
+        SELECT p.person_id, p.person_name, mc.character_name
+        FROM movie_cast mc
+        JOIN person p ON p.person_id = mc.person_id
+        WHERE mc.movie_id = $1
+        ORDER BY mc.cast_order NULLS LAST
+        LIMIT 20
+      `, [movieId])
+    ]);
 
-    res.render('pelicula', { movie, tmdbData });
+    const tmdbData = await getMovieDetailsById(movie.movie_id);
+
+    res.render('pelicula', {
+      movie,
+      tmdbData,
+      directores: directorsRes.rows,
+      actores: castRes.rows
+    });
   } catch (err) {
     console.error(err);
     res.status(500).send('Error al cargar detalle de película.');
