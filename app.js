@@ -10,6 +10,7 @@ require('dotenv').config();
 const express = require('express');
 
 const { Pool } = require('pg');
+const { getTmdbMovie } = require('./tmdb');
 
 const app = express();
 const port = process.env.PORT || 3500;
@@ -94,109 +95,67 @@ app.get('/buscar', async (req, res) => {
     }
 });
 
-// Ruta para la página de datos de una película particular (PostgreSQL)
-app.get('/pelicula/:id', async (req, res) => { // Convertir a async
-    const movieId = req.params.id;
-
-    const query = `
-    SELECT
-      movie.*,
-      actor.person_name as actor_name,
-      actor.person_id as actor_id,
-      crew_member.person_name as crew_member_name,
-      crew_member.person_id as crew_member_id,
-      movie_cast.character_name,
-      movie_cast.cast_order,
-      department.department_name,
-      movie_crew.job
-    FROM movie
-    LEFT JOIN movie_cast ON movie.movie_id = movie_cast.movie_id
-    LEFT JOIN person as actor ON movie_cast.person_id = actor.person_id
-    LEFT JOIN movie_crew ON movie.movie_id = movie_crew.movie_id
-    LEFT JOIN department ON movie_crew.department_id = department.department_id
-    LEFT JOIN person as crew_member ON crew_member.person_id = movie_crew.person_id
-    WHERE movie.movie_id = $1
-  `;
+// Cargar cada relación por separado evita multiplicar las filas de elenco y equipo.
+app.get('/pelicula/:id', async (req, res) => {
+    const movieId = Number(req.params.id);
+    if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isInteger(movieId) || movieId > 2147483647) {
+        return res.status(400).send('ID de película inválido.');
+    }
 
     try {
-        const result = await db.query(query, [movieId]);
-        const rows = result.rows;
-
-        if (rows.length === 0) {
+        const movieResult = await db.query('SELECT * FROM movie WHERE movie_id = $1', [movieId]);
+        if (movieResult.rows.length === 0) {
             return res.status(404).send('Película no encontrada.');
         }
 
-        const movieData = {
-            id: rows[0].id,
-            title: rows[0].title,
-            release_date: rows[0].release_date,
-            overview: rows[0].overview,
-            directors: [],
-            writers: [],
-            cast: [],
-            crew: [],
-        };
+        const queries = [
+            `SELECT DISTINCT p.person_id, p.person_name, mc.character_name, mc.cast_order,
+                    g.gender
+             FROM movie_cast mc
+             JOIN person p ON p.person_id = mc.person_id
+             LEFT JOIN gender g ON g.gender_id = mc.gender_id
+             WHERE mc.movie_id = $1
+             ORDER BY mc.cast_order NULLS LAST, p.person_name, mc.character_name`,
+            `SELECT DISTINCT p.person_id, p.person_name, d.department_name, mc.job
+             FROM movie_crew mc
+             JOIN person p ON p.person_id = mc.person_id
+             LEFT JOIN department d ON d.department_id = mc.department_id
+             WHERE mc.movie_id = $1
+             ORDER BY d.department_name NULLS LAST, mc.job, p.person_name`,
+            `SELECT DISTINCT g.genre_name
+             FROM movie_genres mg JOIN genre g ON g.genre_id = mg.genre_id
+             WHERE mg.movie_id = $1 ORDER BY g.genre_name`,
+            `SELECT DISTINCT c.country_name, c.country_iso_code
+             FROM production_country pc JOIN country c ON c.country_id = pc.country_id
+             WHERE pc.movie_id = $1 ORDER BY c.country_name`,
+            `SELECT DISTINCT l.language_name, l.language_code, lr.language_role
+             FROM movie_languages ml
+             JOIN language l ON l.language_id = ml.language_id
+             LEFT JOIN language_role lr ON lr.role_id = ml.language_role_id
+             WHERE ml.movie_id = $1 ORDER BY lr.language_role, l.language_name`,
+            `SELECT DISTINCT pc.company_name
+             FROM movie_company mc JOIN production_company pc ON pc.company_id = mc.company_id
+             WHERE mc.movie_id = $1 ORDER BY pc.company_name`,
+            `SELECT DISTINCT k.keyword_name
+             FROM movie_keywords mk JOIN keyword k ON k.keyword_id = mk.keyword_id
+             WHERE mk.movie_id = $1 ORDER BY k.keyword_name`,
+        ];
+        const [cast, crew, genres, countries, languages, companies, keywords] = await Promise.all(
+            queries.map((query) => db.query(query, [movieId]))
+        );
+        const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
 
-        rows.forEach((row) => {
-            if (row.crew_member_id && row.crew_member_name && row.department_name && row.job) {
-                const isDuplicate = movieData.directors.some((crew_member) => crew_member.crew_member_id === row.crew_member_id);
-                if (!isDuplicate && row.department_name === 'Directing' && row.job === 'Director') {
-                    movieData.directors.push({
-                        crew_member_id: row.crew_member_id,
-                        crew_member_name: row.crew_member_name,
-                        department_name: row.department_name,
-                        job: row.job,
-                    });
-                }
-            }
+        res.render('pelicula', {
+            movie: movieResult.rows[0],
+            cast: cast.rows,
+            crew: crew.rows,
+            genres: genres.rows,
+            countries: countries.rows,
+            languages: languages.rows,
+            companies: companies.rows,
+            keywords: keywords.rows,
+            tmdb,
         });
-
-        rows.forEach((row) => {
-            if (row.crew_member_id && row.crew_member_name && row.department_name && row.job) {
-                const isDuplicate = movieData.writers.some((crew_member) => crew_member.crew_member_id === row.crew_member_id);
-                if (!isDuplicate && row.department_name === 'Writing' && (row.job === 'Writer' || row.job === 'Screenplay')) { // Ajuste para más roles de escritura
-                    movieData.writers.push({
-                        crew_member_id: row.crew_member_id,
-                        crew_member_name: row.crew_member_name,
-                        department_name: row.department_name,
-                        job: row.job,
-                    });
-                }
-            }
-        });
-
-        rows.forEach((row) => {
-            if (row.actor_id && row.actor_name && row.character_name) {
-                const isDuplicate = movieData.cast.some((actor) => actor.actor_id === row.actor_id);
-                if (!isDuplicate) {
-                    movieData.cast.push({
-                        actor_id: row.actor_id,
-                        actor_name: row.actor_name,
-                        character_name: row.character_name,
-                        cast_order: row.cast_order,
-                    });
-                }
-            }
-        });
-
-        rows.forEach((row) => {
-            if (row.crew_member_id && row.crew_member_name && row.department_name && row.job) {
-                const isDuplicate = movieData.crew.some((crew_member) => crew_member.crew_member_id === row.crew_member_id);
-                if (!isDuplicate) {
-                    if (row.department_name !== 'Directing' && row.department_name !== 'Writing') {
-                        movieData.crew.push({
-                            crew_member_id: row.crew_member_id,
-                            crew_member_name: row.crew_member_name,
-                            department_name: row.department_name,
-                            job: row.job,
-                        });
-                    }
-                }
-            }
-        });
-
-        res.render('pelicula', { movie: movieData });
-
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar los datos de la película.');
