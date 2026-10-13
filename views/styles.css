@@ -174,6 +174,9 @@ body.movie-page {
 .movie-disclosure { margin-top: 20px; }
 .movie-disclosure summary, .movie-crew-department summary { cursor: pointer; color: #087d82; font-weight: 700; }
 .movie-credits-additional { margin-top: 10px; }
+.movie-disclosure[open] { display: flex; flex-direction: column; }
+.movie-disclosure[open] summary { order: 2; margin-top: 20px; }
+.movie-disclosure[open] .movie-credits-additional { order: 1; margin-top: 0; }
 .movie-crew-groups { border-top: 1px solid #e1e7e4; }
 .movie-crew-department { border-bottom: 1px solid #e1e7e4; }
 .movie-crew-department summary { display: flex; justify-content: space-between; gap: 16px; padding: 15px 0; list-style-position: inside; }
