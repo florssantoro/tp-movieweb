@@ -36,17 +36,36 @@ app.get('/', (req, res) => {
 });
 
 // Ruta para buscar películas en la base de datos PostgreSQL
-app.get('/buscar', async (req, res) => { // 4. Convertir a función async
+app.get('/buscar', async (req, res) => {
     const searchTerm = req.query.q;
+    const value = [`%${searchTerm}%`];
 
-    // Los placeholders en pg son $1, $2, etc.
-    const query = 'SELECT * FROM movie WHERE title ILIKE $1'; // ILIKE es case-insensitive en Postgres
-    const values = [`%${searchTerm}%`];
+    const movieQuery = 'SELECT * FROM movie WHERE title ILIKE $1';
+
+    const actorQuery = `
+        SELECT DISTINCT person.person_id, person.person_name
+        FROM person
+        INNER JOIN movie_cast ON person.person_id = movie_cast.person_id
+        WHERE person.person_name ILIKE $1`;
+
+    const directorQuery = `
+        SELECT DISTINCT person.person_id, person.person_name
+        FROM person
+        INNER JOIN movie_crew ON person.person_id = movie_crew.person_id
+        WHERE movie_crew.job = 'Director' AND person.person_name ILIKE $1`;
 
     try {
-        // Usar db.query que devuelve una promesa y acceder a .rows
-        const result = await db.query(query, values);
-        res.render('resultado', { movies: result.rows });
+        const [movies, actors, directors] = await Promise.all([
+            db.query(movieQuery, value),
+            db.query(actorQuery, value),
+            db.query(directorQuery, value)
+        ]);
+
+        res.render('resultado', {
+            movies: movies.rows,
+            actors: actors.rows,
+            directors: directors.rows
+        });
     } catch (err) {
         console.error(err);
         res.status(500).send('Error en la búsqueda.');
