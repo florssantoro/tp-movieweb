@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pre-Push Code Review"
+  short_description: "Review local changes before pushing"
+  default_prompt: "Use $pre-push-code-review to review my local changes before I push."

@@ -14,6 +14,8 @@ const { Pool } = require('pg');
 const app = express();
 const port = process.env.PORT || 3500;
 
+const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
+
 // Serve static files from the "views" directory
 app.use(express.static('views'));
 
@@ -37,22 +39,41 @@ app.get('/', (req, res) => {
 
 // Ruta para buscar películas en la base de datos PostgreSQL
 app.get('/buscar', async (req, res) => {
-    const searchTerm = req.query.q;
-    const value = [`%${searchTerm}%`];
+    const searchTerm = String(req.query.q || '').trim();
 
-    const movieQuery = 'SELECT * FROM movie WHERE title ILIKE $1';
+    if (!searchTerm) {
+        return res.render('resultado', {
+            movies: [],
+            actors: [],
+            directors: [],
+            emptySearch: true,
+        });
+    }
+
+    const value = [`%${escapeLikePattern(searchTerm)}%`];
+
+    const movieQuery = `
+        SELECT movie_id, title
+        FROM movie
+        WHERE title ILIKE $1 ESCAPE '\\'
+        ORDER BY title ASC
+        LIMIT 50`;
 
     const actorQuery = `
         SELECT DISTINCT person.person_id, person.person_name
         FROM person
         INNER JOIN movie_cast ON person.person_id = movie_cast.person_id
-        WHERE person.person_name ILIKE $1`;
+        WHERE person.person_name ILIKE $1 ESCAPE '\\'
+        ORDER BY person.person_name ASC
+        LIMIT 50`;
 
     const directorQuery = `
         SELECT DISTINCT person.person_id, person.person_name
         FROM person
         INNER JOIN movie_crew ON person.person_id = movie_crew.person_id
-        WHERE movie_crew.job = 'Director' AND person.person_name ILIKE $1`;
+        WHERE movie_crew.job = 'Director' AND person.person_name ILIKE $1 ESCAPE '\\'
+        ORDER BY person.person_name ASC
+        LIMIT 50`;
 
     try {
         const [movies, actors, directors] = await Promise.all([
@@ -64,7 +85,8 @@ app.get('/buscar', async (req, res) => {
         res.render('resultado', {
             movies: movies.rows,
             actors: actors.rows,
-            directors: directors.rows
+            directors: directors.rows,
+            emptySearch: false,
         });
     } catch (err) {
         console.error(err);
@@ -183,23 +205,49 @@ app.get('/pelicula/:id', async (req, res) => { // Convertir a async
 
 // Ruta para mostrar la página de un actor específico (PostgreSQL)
 app.get('/actor/:id', async (req, res) => {
-    const actorId = req.params.id;
+    const actorId = Number(req.params.id);
 
-    const query = `
-    SELECT DISTINCT
-      person.person_name as actorName,
-      movie.*
-    FROM movie
-    INNER JOIN movie_cast ON movie.movie_id = movie_cast.movie_id
-    INNER JOIN person ON person.person_id = movie_cast.person_id
-    WHERE movie_cast.person_id = $1;
-  `;
+    if (!Number.isInteger(actorId) || actorId <= 0) {
+        return res.status(400).send('ID de actor inválido.');
+    }
+
+    const personQuery = `
+      SELECT person_id, person_name
+      FROM person
+      WHERE person_id = $1
+    `;
+
+    const creditsQuery = `
+      SELECT
+        movie.movie_id,
+        movie.title,
+        movie.release_date,
+        STRING_AGG(
+          DISTINCT NULLIF(TRIM(movie_cast.character_name), ''),
+          ', '
+          ORDER BY NULLIF(TRIM(movie_cast.character_name), '')
+        ) AS role
+      FROM movie_cast
+      INNER JOIN movie ON movie.movie_id = movie_cast.movie_id
+      WHERE movie_cast.person_id = $1
+      GROUP BY movie.movie_id, movie.title, movie.release_date
+      ORDER BY movie.release_date DESC NULLS LAST, movie.title ASC
+    `;
 
     try {
-        const result = await db.query(query, [actorId]);
-        const movies = result.rows;
-        const actorName = movies.length > 0 ? movies[0].actorname : ''; // Ojo: postgres devuelve todo en minúsculas por defecto
-        res.render('actor', { actorName, movies });
+        const [personResult, creditsResult] = await Promise.all([
+            db.query(personQuery, [actorId]),
+            db.query(creditsQuery, [actorId]),
+        ]);
+
+        if (personResult.rows.length === 0 || creditsResult.rows.length === 0) {
+            return res.status(404).send('Actor no encontrado.');
+        }
+
+        res.render('actor', {
+            person: personResult.rows[0],
+            credits: creditsResult.rows,
+        });
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar las películas del actor.');
@@ -208,23 +256,44 @@ app.get('/actor/:id', async (req, res) => {
 
 // Ruta para mostrar la página de un director específico (PostgreSQL)
 app.get('/director/:id', async (req, res) => {
-    const directorId = req.params.id;
+    const directorId = Number(req.params.id);
 
-    const query = `
-    SELECT DISTINCT
-      person.person_name as directorName,
-      movie.*
-    FROM movie
-    INNER JOIN movie_crew ON movie.movie_id = movie_crew.movie_id
-    INNER JOIN person ON person.person_id = movie_crew.person_id
-    WHERE movie_crew.job = 'Director' AND movie_crew.person_id = $1;
-  `;
+    if (!Number.isInteger(directorId) || directorId <= 0) {
+        return res.status(400).send('ID de director inválido.');
+    }
+
+    const personQuery = `
+      SELECT person_id, person_name
+      FROM person
+      WHERE person_id = $1
+    `;
+
+    const creditsQuery = `
+      SELECT DISTINCT
+        movie.movie_id,
+        movie.title,
+        movie.release_date,
+        movie_crew.job AS role
+      FROM movie_crew
+      INNER JOIN movie ON movie.movie_id = movie_crew.movie_id
+      WHERE movie_crew.person_id = $1 AND movie_crew.job = 'Director'
+      ORDER BY movie.release_date DESC NULLS LAST, movie.title ASC
+    `;
 
     try {
-        const result = await db.query(query, [directorId]);
-        const movies = result.rows;
-        const directorName = movies.length > 0 ? movies[0].directorname : ''; // Ojo: postgres devuelve todo en minúsculas por defecto
-        res.render('director', { directorName, movies });
+        const [personResult, creditsResult] = await Promise.all([
+            db.query(personQuery, [directorId]),
+            db.query(creditsQuery, [directorId]),
+        ]);
+
+        if (personResult.rows.length === 0 || creditsResult.rows.length === 0) {
+            return res.status(404).send('Director no encontrado.');
+        }
+
+        res.render('director', {
+            person: personResult.rows[0],
+            credits: creditsResult.rows,
+        });
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar las películas del director.');
@@ -232,6 +301,10 @@ app.get('/director/:id', async (req, res) => {
 });
 
 
-app.listen(port, () => {
-    console.log(`Servidor en ejecución en http://localhost:${port}`);
-});
+if (require.main === module) {
+    app.listen(port, () => {
+        console.log(`Servidor en ejecución en http://localhost:${port}`);
+    });
+}
+
+module.exports = { app, db };

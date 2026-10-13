@@ -7,6 +7,10 @@
 <body>
 <h1>Resultado de la Búsqueda</h1>
 
+<% if (emptySearch) { %>
+    <p>Ingresá una película, actor o director para buscar.</p>
+<% } else { %>
+
 <h2>Películas</h2>
 <% if (movies.length === 0) { %>
     <p>No se encontraron películas.</p>
@@ -39,7 +43,9 @@
         <% }); %>
     </ul>
 <% } %>
+<% } %>
 
 <p></p>
 <div id="inicio"><a href="/">Inicio</a></div>
 </body>
+</html>
