@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Local Changes"
+  short_description: "Review and commit current local Git changes"
+  default_prompt: "Use $commit-local-changes to review and commit the current local Git changes."
