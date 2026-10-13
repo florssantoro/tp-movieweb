@@ -15,6 +15,15 @@ const formatNumber = (value) => Number(value).toLocaleString('es-AR', { maximumF
 const directors = crew.filter((member) => member.job === 'Director');
 const writers = crew.filter((member) => member.department_name === 'Writing');
 const otherCrew = crew.filter((member) => member.job !== 'Director' && member.department_name !== 'Writing');
+const featuredCast = cast.slice(0, 12);
+const additionalCast = cast.slice(12);
+const crewDepartments = otherCrew.reduce((groups, member) => {
+    const departmentName = member.department_name || 'Otros';
+    const existingGroup = groups.find((group) => group.name === departmentName);
+    if (existingGroup) existingGroup.members.push(member);
+    else groups.push({ name: departmentName, members: [member] });
+    return groups;
+}, []);
 const primaryOverview = tmdb?.overview || movie.overview;
 %>
 
@@ -108,18 +117,31 @@ const primaryOverview = tmdb?.overview || movie.overview;
     <section class="movie-section" aria-labelledby="cast-heading">
         <h2 id="cast-heading">Elenco <span class="movie-count"><%= cast.length %></span></h2>
         <% if (cast.length) { %>
-            <ol class="movie-credits movie-credits-grid"><% cast.forEach((actor) => { %>
+            <ol class="movie-credits movie-credits-grid"><% featuredCast.forEach((actor) => { %>
                 <li><a href="/actor/<%= actor.person_id %>"><%= actor.person_name %></a><% if (actor.character_name) { %><small><%= actor.character_name %></small><% } %></li>
             <% }); %></ol>
+            <% if (additionalCast.length) { %>
+                <details class="movie-disclosure">
+                    <summary>Ver elenco completo (<%= cast.length %>)</summary>
+                    <ol class="movie-credits movie-credits-grid movie-credits-additional"><% additionalCast.forEach((actor) => { %>
+                        <li><a href="/actor/<%= actor.person_id %>"><%= actor.person_name %></a><% if (actor.character_name) { %><small><%= actor.character_name %></small><% } %></li>
+                    <% }); %></ol>
+                </details>
+            <% } %>
         <% } else { %><p class="movie-muted">Sin datos de elenco.</p><% } %>
     </section>
 
     <section class="movie-section" aria-labelledby="crew-heading">
         <h2 id="crew-heading">Equipo técnico <span class="movie-count"><%= otherCrew.length %></span></h2>
         <% if (otherCrew.length) { %>
-            <ul class="movie-credits movie-credits-grid"><% otherCrew.forEach((member) => { %>
-                <li><span><%= member.person_name %></span><small><%= member.job %><%= member.department_name ? ' · ' + member.department_name : '' %></small></li>
-            <% }); %></ul>
+            <div class="movie-crew-groups"><% crewDepartments.forEach((department) => { %>
+                <details class="movie-crew-department">
+                    <summary><span><%= department.name %></span><span class="movie-count"><%= department.members.length %></span></summary>
+                    <ul class="movie-credits movie-credits-grid"><% department.members.forEach((member) => { %>
+                        <li><span><%= member.person_name %></span><small><%= member.job %></small></li>
+                    <% }); %></ul>
+                </details>
+            <% }); %></div>
         <% } else { %><p class="movie-muted">Sin datos de equipo técnico.</p><% } %>
     </section>
 </main>

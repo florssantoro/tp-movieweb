@@ -167,10 +167,17 @@ body.movie-page {
 .movie-facts dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .movie-credit-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px; }
 .movie-credits { margin: 0; padding: 0; list-style: none; }
-.movie-credits-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 24px; }
+.movie-credits-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 32px; }
 .movie-credits li { min-width: 0; margin: 0; padding: 11px 0; border-bottom: 1px solid #e1e7e4; overflow-wrap: anywhere; }
 .movie-credits small { display: block; margin-top: 2px; color: #64716f; font-size: 13px; }
 .movie-count { margin-left: 6px; color: #64716f; font-size: 15px; font-weight: 400; }
+.movie-disclosure { margin-top: 20px; }
+.movie-disclosure summary, .movie-crew-department summary { cursor: pointer; color: #087d82; font-weight: 700; }
+.movie-credits-additional { margin-top: 10px; }
+.movie-crew-groups { border-top: 1px solid #e1e7e4; }
+.movie-crew-department { border-bottom: 1px solid #e1e7e4; }
+.movie-crew-department summary { display: flex; justify-content: space-between; gap: 16px; padding: 15px 0; list-style-position: inside; }
+.movie-crew-department .movie-credits { padding: 0 0 16px; }
 .movie-footer { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding: 28px 0 40px; border-top: 1px solid #dce3e0; font-size: 13px; }
 .movie-attribution { display: flex; align-items: center; }
 .movie-attribution img { display: block; width: 54px; height: auto; }
@@ -182,13 +189,12 @@ body.movie-page {
     .movie-tagline { font-size: 15px; }
     .movie-summary strong { display: block; }
     .movie-facts, .movie-credit-groups { grid-template-columns: 1fr; }
-    .movie-credits-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .movie-credits-grid { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 480px) {
     .movie-lead { grid-template-columns: 1fr; }
     .movie-poster { width: min(180px, 100%); }
-    .movie-credits-grid { grid-template-columns: 1fr; }
     .movie-facts div { grid-template-columns: 105px minmax(0, 1fr); }
     .movie-section-heading { display: block; }
     .movie-footer { align-items: start; flex-direction: column; }
