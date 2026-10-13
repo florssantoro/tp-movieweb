@@ -116,7 +116,6 @@ test('movie detail shows TMDB media and keeps PostgreSQL synopsis as an alternat
         posterUrl: 'https://image.tmdb.org/t/p/w500/poster.jpg',
         trailerUrl: 'https://www.youtube.com/watch?v=abcdefghijk',
         trailerEmbedUrl: 'https://www.youtube-nocookie.com/embed/abcdefghijk',
-        homepage: null,
         url: 'https://www.themoviedb.org/movie/238',
     });
 
@@ -129,7 +128,7 @@ test('movie detail shows TMDB media and keeps PostgreSQL synopsis as an alternat
     assert.match(body, /image\.tmdb\.org\/t\/p\/w500\/poster\.jpg/);
     assert.match(body, /youtube-nocookie\.com\/embed\/abcdefghijk/);
     assert.match(body, /Ficha en TMDB/);
-    assert.match(body, /no está avalado ni certificado por TMDB/);
+    assert.doesNotMatch(body, /Sitio oficial|Sitio web \(TMDB\)|no está avalado ni certificado por TMDB/);
 });
 
 test('movie detail handles invalid and missing IDs', async () => {

@@ -43,8 +43,6 @@ const primaryOverview = tmdb?.overview || movie.overview;
                 <% if (formattedDate) { %><p><strong>Estreno</strong> <%= formattedDate %></p><% } %>
             </div>
             <div class="movie-links">
-                <% if (movieHomepage) { %><a href="<%= movieHomepage %>" target="_blank" rel="noopener noreferrer">Sitio oficial ↗</a><% } %>
-                <% if (tmdb?.homepage && tmdb.homepage !== movieHomepage) { %><a href="<%= tmdb.homepage %>" target="_blank" rel="noopener noreferrer">Sitio web (TMDB) ↗</a><% } %>
                 <% if (tmdb?.url) { %><a href="<%= tmdb.url %>" target="_blank" rel="noopener noreferrer">Ficha en TMDB ↗</a><% } %>
                 <% if (tmdb?.trailerUrl) { %><a href="#trailer">Ver tráiler ↓</a><% } %>
             </div>
@@ -130,7 +128,6 @@ const primaryOverview = tmdb?.overview || movie.overview;
     <% if (tmdb) { %>
         <div class="movie-attribution">
             <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer"><img src="/tmdb-logo.svg" alt="TMDB" width="54" height="39"></a>
-            <p>Este producto utiliza la API de TMDB, pero no está avalado ni certificado por TMDB.</p>
         </div>
     <% } %>
     <a href="/">MovieWeb</a>

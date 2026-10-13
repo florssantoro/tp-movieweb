@@ -172,9 +172,8 @@ body.movie-page {
 .movie-credits small { display: block; margin-top: 2px; color: #64716f; font-size: 13px; }
 .movie-count { margin-left: 6px; color: #64716f; font-size: 15px; font-weight: 400; }
 .movie-footer { display: flex; justify-content: space-between; align-items: end; gap: 24px; padding: 28px 0 40px; border-top: 1px solid #dce3e0; font-size: 13px; }
-.movie-attribution { display: flex; align-items: center; gap: 12px; max-width: 530px; color: #64716f; }
+.movie-attribution { display: flex; align-items: center; }
 .movie-attribution img { display: block; width: 54px; height: auto; }
-.movie-attribution p { margin: 0; }
 
 @media (max-width: 760px) {
     .movie-header, .movie-main, .movie-footer { width: min(100% - 32px, 560px); }

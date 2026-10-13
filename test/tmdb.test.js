@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { getTmdbMovie, safeHomepage } = require('../tmdb');
+const { getTmdbMovie } = require('../tmdb');
 
 test('TMDB details use Spanish trailer when available', async () => {
     const calls = [];
@@ -13,7 +13,6 @@ test('TMDB details use Spanish trailer when available', async () => {
                 json: async () => ({
                     overview: 'Sinopsis en español',
                     poster_path: '/poster.jpg',
-                    homepage: 'https://example.com/movie',
                     videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abcdefghijk', official: true }] },
                 }),
             };
@@ -55,6 +54,4 @@ test('TMDB failures and missing data leave the PostgreSQL page usable', async ()
         apiKey: 'test-key',
         fetchImpl: async () => ({ ok: false, status: 404 }),
     }), null);
-    assert.equal(safeHomepage('javascript:alert(1)'), null);
-    assert.equal(safeHomepage('https://example.com/movie'), 'https://example.com/movie');
 });

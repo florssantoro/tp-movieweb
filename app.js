@@ -10,7 +10,7 @@ require('dotenv').config();
 const express = require('express');
 
 const { Pool } = require('pg');
-const { getTmdbMovie, safeHomepage } = require('./tmdb');
+const { getTmdbMovie } = require('./tmdb');
 
 const app = express();
 const port = process.env.PORT || 3500;
@@ -155,7 +155,6 @@ app.get('/pelicula/:id', async (req, res) => {
             companies: companies.rows,
             keywords: keywords.rows,
             tmdb,
-            movieHomepage: safeHomepage(movieResult.rows[0].homepage),
         });
     } catch (err) {
         console.error(err);

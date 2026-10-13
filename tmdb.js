@@ -9,16 +9,6 @@ function selectTrailer(videos) {
     return candidates[0] || null;
 }
 
-function safeHomepage(value) {
-    if (!value) return null;
-    try {
-        const url = new URL(value);
-        return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
-    } catch {
-        return null;
-    }
-}
-
 async function getTmdbMovie(movieId, { apiKey = process.env.TMDB_API_KEY, fetchImpl = fetch } = {}) {
     if (!apiKey) return null;
 
@@ -51,7 +41,6 @@ async function getTmdbMovie(movieId, { apiKey = process.env.TMDB_API_KEY, fetchI
                 ? `https://image.tmdb.org/t/p/w500${posterPath}` : null,
             trailerUrl: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
             trailerEmbedUrl: trailer ? `https://www.youtube-nocookie.com/embed/${trailer.key}` : null,
-            homepage: safeHomepage(details.homepage),
             url: `https://www.themoviedb.org/movie/${movieId}`,
         };
     } catch {
@@ -59,4 +48,4 @@ async function getTmdbMovie(movieId, { apiKey = process.env.TMDB_API_KEY, fetchI
     }
 }
 
-module.exports = { getTmdbMovie, safeHomepage };
+module.exports = { getTmdbMovie };
