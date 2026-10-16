@@ -96,7 +96,7 @@ const primaryOverview = tmdb?.overview || movie.overview;
             <% if (movie.vote_count != null) { %><div><dt>Votos</dt><dd><%= formatNumber(movie.vote_count) %></dd></div><% } %>
             <% if (languages.length) { %><div><dt>Idiomas</dt><dd><%= languages.map((item) => item.language_name + (item.language_role ? ' (' + item.language_role + ')' : '')).join(', ') %></dd></div><% } %>
             <% if (companies.length) { %><div><dt>Productoras</dt><dd><%= companies.map((item) => item.company_name).join(', ') %></dd></div><% } %>
-            <% if (keywords.length) { %><div><dt>Palabras clave</dt><dd><%= keywords.map((item) => item.keyword_name).join(', ') %></dd></div><% } %>
+            <% if (keywords.length) { %><div><dt>Palabras clave</dt><dd><% keywords.forEach((item, index) => { %><%= index ? ', ' : '' %><a href="/keyword/resultados?q=<%= encodeURIComponent(item.keyword_name) %>"><%= item.keyword_name %></a><% }); %></dd></div><% } %>
         </dl>
     </section>
 

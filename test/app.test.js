@@ -42,6 +42,47 @@ test('SQL wildcard characters are searched as literal text', async () => {
     }
 });
 
+test('keyword search page links to keyword results', async () => {
+    const response = await fetch(`${baseUrl}/keyword`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, /action="\/keyword\/resultados"/);
+});
+
+test('keyword search lists related movies with matching keywords', async () => {
+    const keyword = await db.query(`
+        SELECT keyword.keyword_name, movie.movie_id
+        FROM keyword
+        INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
+        INNER JOIN movie ON movie.movie_id = movie_keywords.movie_id
+        LIMIT 1
+    `);
+    assert.ok(keyword.rows.length > 0, 'La base debe contener al menos una película con palabra clave.');
+    const { keyword_name: keywordName, movie_id: movieId } = keyword.rows[0];
+
+    const response = await fetch(`${baseUrl}/keyword/resultados?q=${encodeURIComponent(keywordName)}`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, new RegExp(`href="/pelicula/${movieId}"`));
+    assert.match(body, /<strong>Palabras clave:<\/strong>/);
+});
+
+test('keyword search handles empty, unmatched and wildcard queries', async () => {
+    const empty = await fetch(`${baseUrl}/keyword/resultados?q=%20`);
+    assert.equal(empty.status, 200);
+    assert.match(await empty.text(), /Ingresá una palabra clave/);
+
+    const unmatched = await fetch(`${baseUrl}/keyword/resultados?q=zzzz-no-existe-zzzz`);
+    assert.equal(unmatched.status, 200);
+    assert.match(await unmatched.text(), /No se encontraron películas/);
+
+    const wildcard = await fetch(`${baseUrl}/keyword/resultados?q=${encodeURIComponent('%')}`);
+    assert.equal(wildcard.status, 200);
+    assert.doesNotMatch(await wildcard.text(), /href="\/pelicula\//);
+});
+
 test('actor profile includes films and character roles', async () => {
     const actor = await db.query(`
         SELECT person_id

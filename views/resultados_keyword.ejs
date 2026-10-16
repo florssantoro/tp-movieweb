@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Resultados por palabra clave</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<h1>Resultados por palabra clave</h1>
+
+<% if (emptySearch) { %>
+    <p>Ingresá una palabra clave para buscar.</p>
+<% } else { %>
+
+<h2>Películas relacionadas con "<%= searchTerm %>"</h2>
+<% if (movies.length === 0) { %>
+    <p>No se encontraron películas con esa palabra clave.</p>
+<% } else { %>
+    <ul>
+        <% movies.forEach((movie) => { %>
+            <li>
+                <a href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
+                <% if (movie.release_date) { %>
+                    (<%= new Date(movie.release_date).getFullYear() %>)
+                <% } %>
+                — <strong>Palabras clave:</strong> <%= movie.keywords %>
+            </li>
+        <% }); %>
+    </ul>
+<% } %>
+<% } %>
+
+<p></p>
+<div id="inicio"><a href="/keyword">Nueva búsqueda</a> · <a href="/">Inicio</a></div>
+</body>
+</html>
