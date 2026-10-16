@@ -259,6 +259,52 @@ app.get('/director/:id', async (req, res) => {
     }
 });
 
+// Página del buscador de palabras clave
+app.get('/keyword', (req, res) => {
+    res.render('search_keyword');
+});
+
+// Ruta para buscar películas por palabra clave (PostgreSQL)
+app.get('/keyword/resultados', async (req, res) => {
+    const searchTerm = String(req.query.q || '').trim();
+
+    if (!searchTerm) {
+        return res.render('resultados_keyword', {
+            searchTerm,
+            movies: [],
+            emptySearch: true,
+        });
+    }
+
+    const moviesQuery = `
+      SELECT
+        movie.movie_id,
+        movie.title,
+        movie.release_date,
+        STRING_AGG(DISTINCT keyword.keyword_name, ', ' ORDER BY keyword.keyword_name) AS keywords
+      FROM keyword
+      INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
+      INNER JOIN movie ON movie.movie_id = movie_keywords.movie_id
+      WHERE keyword.keyword_name ILIKE $1 ESCAPE '\\'
+      GROUP BY movie.movie_id, movie.title, movie.release_date
+      ORDER BY movie.title ASC
+      LIMIT 100
+    `;
+
+    try {
+        const result = await db.query(moviesQuery, [`%${escapeLikePattern(searchTerm)}%`]);
+
+        res.render('resultados_keyword', {
+            searchTerm,
+            movies: result.rows,
+            emptySearch: false,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error en la búsqueda por palabra clave.');
+    }
+});
+
 
 if (require.main === module) {
     app.listen(port, () => {
