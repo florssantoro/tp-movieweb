@@ -469,6 +469,49 @@ app.post('/usuarios/:id/eliminar', async (req, res) => {
     }
 });
 
+// Perfil de un usuario con sus películas, puntuación y opinión (PostgreSQL)
+app.get('/usuarios/:id', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    const userQuery = `
+      SELECT user_id, user_username, user_name, user_email
+      FROM users
+      WHERE user_id = $1
+    `;
+
+    const moviesQuery = `
+      SELECT movie.movie_id, movie.title, movie.release_date,
+             movie_user.rating, movie_user.opinion
+      FROM movie_user
+      INNER JOIN movie ON movie.movie_id = movie_user.movie_id
+      WHERE movie_user.user_id = $1
+      ORDER BY movie.title ASC
+    `;
+
+    try {
+        const [userResult, moviesResult] = await Promise.all([
+            db.query(userQuery, [userId]),
+            db.query(moviesQuery, [userId]),
+        ]);
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.render('usuario', {
+            user: userResult.rows[0],
+            movies: moviesResult.rows,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar el perfil del usuario.');
+    }
+});
+
 
 if (require.main === module) {
     app.listen(port, () => {

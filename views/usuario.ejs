@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Perfil de <%= user.user_username %></title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<h1><%= user.user_username %></h1>
+<p><strong>Nombre:</strong> <%= user.user_name %></p>
+<p><strong>Email:</strong> <%= user.user_email %></p>
+<p><a href="/usuarios/<%= user.user_id %>/editar">Editar usuario</a></p>
+
+<h2>Películas</h2>
+<% if (movies.length === 0) { %>
+    <p>Este usuario todavía no calificó ninguna película.</p>
+<% } else { %>
+    <ul>
+        <% movies.forEach((movie) => { %>
+            <li>
+                <a href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
+                <% if (movie.release_date) { %>
+                    (<%= new Date(movie.release_date).getFullYear() %>)
+                <% } %>
+                <% if (movie.rating) { %>
+                    — <strong>Puntuación:</strong> <%= '★'.repeat(movie.rating) %><%= '☆'.repeat(5 - movie.rating) %>
+                <% } %>
+                <% if (movie.opinion) { %>
+                    <br><em>"<%= movie.opinion %>"</em>
+                <% } %>
+            </li>
+        <% }); %>
+    </ul>
+<% } %>
+
+<p></p>
+<div id="inicio"><a href="/usuarios">Volver a usuarios</a> · <a href="/">Inicio</a></div>
+</body>
+</html>
