@@ -20,7 +20,7 @@ test('movie template handles absent dates, metadata, credits and TMDB data', asy
             movie_status: null,
         },
         cast: [], crew: [], genres: [], countries: [], languages: [], companies: [], keywords: [],
-        tmdb: null,
+        tmdb: null, users: [],
     });
 
     assert.match(body, /Película sin datos/);

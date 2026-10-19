@@ -20,6 +20,9 @@ const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
 // Serve static files from the "views" directory
 app.use(express.static('views'));
 
+// Permite leer los datos enviados por formularios (req.body)
+app.use(express.urlencoded({ extended: false }));
+
 // Crear un "pool" de conexiones a PostgreSQL usando las variables de entorno
 const db = new Pool({
     user: process.env.DB_USER,
@@ -144,6 +147,7 @@ app.get('/pelicula/:id', async (req, res) => {
             queries.map((query) => db.query(query, [movieId]))
         );
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
+         const usersResult = await db.query('SELECT user_id, user_username FROM users ORDER BY user_username');
 
         res.render('pelicula', {
             movie: movieResult.rows[0],
@@ -155,6 +159,7 @@ app.get('/pelicula/:id', async (req, res) => {
             companies: companies.rows,
             keywords: keywords.rows,
             tmdb,
+            users: usersResult.rows,
         });
     } catch (err) {
         console.error(err);
@@ -302,6 +307,245 @@ app.get('/keyword/resultados', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send('Error en la búsqueda por palabra clave.');
+    }
+});
+
+// Ruta para listar todos los usuarios (PostgreSQL)
+app.get('/usuarios', async (req, res) => {
+    const usersQuery = `
+      SELECT user_id, user_username, user_name, user_email
+      FROM users
+      ORDER BY user_username ASC
+    `;
+
+    try {
+        const result = await db.query(usersQuery);
+
+        res.render('usuarios', {
+            users: result.rows,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar los usuarios.');
+    }
+});
+
+// Muestra el formulario vacío para crear un usuario
+app.get('/usuarios/nuevo', (req, res) => {
+    res.render('usuario_form', {
+        title: 'Nuevo usuario',
+        action: '/usuarios/nuevo',
+        error: null,
+        values: { user_username: '', user_name: '', user_email: '' },
+    });
+});
+
+// Recibe el formulario y guarda el usuario (PostgreSQL)
+app.post('/usuarios/nuevo', async (req, res) => {
+    const values = {
+        user_username: String(req.body.user_username || '').trim(),
+        user_name: String(req.body.user_name || '').trim(),
+        user_email: String(req.body.user_email || '').trim(),
+    };
+
+    if (!values.user_username || !values.user_name || !values.user_email) {
+        return res.status(400).render('usuario_form', {
+            title: 'Nuevo usuario',
+            action: '/usuarios/nuevo',
+            error: 'Completá todos los campos.',
+            values,
+        });
+    }
+
+    const insertQuery = `
+      INSERT INTO users (user_username, user_name, user_email)
+      VALUES ($1, $2, $3)
+    `;
+
+    try {
+        await db.query(insertQuery, [values.user_username, values.user_name, values.user_email]);
+        res.redirect('/usuarios');
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).render('usuario_form', {
+                title: 'Nuevo usuario',
+                action: '/usuarios/nuevo',
+                error: 'Ya existe un usuario con ese username o email.',
+                values,
+            });
+        }
+        console.error(err);
+        res.status(500).send('Error al crear el usuario.');
+    }
+});
+
+// Muestra el formulario con los datos actuales del usuario
+app.get('/usuarios/:id/editar', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    try {
+        const result = await db.query(
+            'SELECT user_username, user_name, user_email FROM users WHERE user_id = $1',
+            [userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.render('usuario_form', {
+            title: 'Editar usuario',
+            action: `/usuarios/${userId}/editar`,
+            error: null,
+            values: result.rows[0],
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar el usuario.');
+    }
+});
+
+// Recibe el formulario y actualiza el usuario (PostgreSQL)
+app.post('/usuarios/:id/editar', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    const values = {
+        user_username: String(req.body.user_username || '').trim(),
+        user_name: String(req.body.user_name || '').trim(),
+        user_email: String(req.body.user_email || '').trim(),
+    };
+    const formOptions = { title: 'Editar usuario', action: `/usuarios/${userId}/editar`, values };
+
+    if (!values.user_username || !values.user_name || !values.user_email) {
+        return res.status(400).render('usuario_form', { ...formOptions, error: 'Completá todos los campos.' });
+    }
+
+    const updateQuery = `
+      UPDATE users
+      SET user_username = $1, user_name = $2, user_email = $3
+      WHERE user_id = $4
+    `;
+
+    try {
+        const result = await db.query(updateQuery, [values.user_username, values.user_name, values.user_email, userId]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.redirect('/usuarios');
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).render('usuario_form', {
+                ...formOptions,
+                error: 'Ya existe un usuario con ese username o email.',
+            });
+        }
+        console.error(err);
+        res.status(500).send('Error al actualizar el usuario.');
+    }
+});
+
+// Borra un usuario (y por CASCADE, sus películas en movie_user)
+app.post('/usuarios/:id/eliminar', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    try {
+        await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+        res.redirect('/usuarios');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al eliminar el usuario.');
+    }
+});
+
+// Perfil de un usuario con sus películas, puntuación y opinión (PostgreSQL)
+app.get('/usuarios/:id', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    const userQuery = `
+      SELECT user_id, user_username, user_name, user_email
+      FROM users
+      WHERE user_id = $1
+    `;
+
+    const moviesQuery = `
+      SELECT movie.movie_id, movie.title, movie.release_date,
+             movie_user.rating, movie_user.opinion
+      FROM movie_user
+      INNER JOIN movie ON movie.movie_id = movie_user.movie_id
+      WHERE movie_user.user_id = $1
+      ORDER BY movie.title ASC
+    `;
+
+    try {
+        const [userResult, moviesResult] = await Promise.all([
+            db.query(userQuery, [userId]),
+            db.query(moviesQuery, [userId]),
+        ]);
+
+        if (userResult.rows.length === 0) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.render('usuario', {
+            user: userResult.rows[0],
+            movies: moviesResult.rows,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar el perfil del usuario.');
+    }
+});
+
+// Guarda (o actualiza) la calificación de un usuario para una película (PostgreSQL)
+app.post('/pelicula/:id/calificar', async (req, res) => {
+    const movieId = Number(req.params.id);
+    const userId = Number(req.body.user_id);
+    const ratingText = String(req.body.rating || '').trim();
+    const opinion = String(req.body.opinion || '').trim() || null;
+    const rating = ratingText === '' ? null : Number(ratingText);
+
+    if (!Number.isInteger(movieId) || movieId <= 0 || !Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('Película o usuario inválido.');
+    }
+
+    if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+        return res.status(400).send('La puntuación debe ser un número del 1 al 5.');
+    }
+
+    const upsertQuery = `
+      INSERT INTO movie_user (user_id, movie_id, rating, opinion)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, movie_id)
+      DO UPDATE SET rating = EXCLUDED.rating, opinion = EXCLUDED.opinion
+    `;
+
+    try {
+        await db.query(upsertQuery, [userId, movieId, rating, opinion]);
+        res.redirect(`/usuarios/${userId}`);
+    } catch (err) {
+        if (err.code === '23503') {
+            return res.status(400).send('El usuario o la película no existen.');
+        }
+        console.error(err);
+        res.status(500).send('Error al guardar la calificación.');
     }
 });
 
