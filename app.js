@@ -147,6 +147,7 @@ app.get('/pelicula/:id', async (req, res) => {
             queries.map((query) => db.query(query, [movieId]))
         );
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
+         const usersResult = await db.query('SELECT user_id, user_username FROM users ORDER BY user_username');
 
         res.render('pelicula', {
             movie: movieResult.rows[0],
@@ -158,6 +159,7 @@ app.get('/pelicula/:id', async (req, res) => {
             companies: companies.rows,
             keywords: keywords.rows,
             tmdb,
+            users: usersResult.rows,
         });
     } catch (err) {
         console.error(err);
@@ -509,6 +511,41 @@ app.get('/usuarios/:id', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar el perfil del usuario.');
+    }
+});
+
+// Guarda (o actualiza) la calificación de un usuario para una película (PostgreSQL)
+app.post('/pelicula/:id/calificar', async (req, res) => {
+    const movieId = Number(req.params.id);
+    const userId = Number(req.body.user_id);
+    const ratingText = String(req.body.rating || '').trim();
+    const opinion = String(req.body.opinion || '').trim() || null;
+    const rating = ratingText === '' ? null : Number(ratingText);
+
+    if (!Number.isInteger(movieId) || movieId <= 0 || !Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('Película o usuario inválido.');
+    }
+
+    if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+        return res.status(400).send('La puntuación debe ser un número del 1 al 5.');
+    }
+
+    const upsertQuery = `
+      INSERT INTO movie_user (user_id, movie_id, rating, opinion)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (user_id, movie_id)
+      DO UPDATE SET rating = EXCLUDED.rating, opinion = EXCLUDED.opinion
+    `;
+
+    try {
+        await db.query(upsertQuery, [userId, movieId, rating, opinion]);
+        res.redirect(`/usuarios/${userId}`);
+    } catch (err) {
+        if (err.code === '23503') {
+            return res.status(400).send('El usuario o la película no existen.');
+        }
+        console.error(err);
+        res.status(500).send('Error al guardar la calificación.');
     }
 });
 
