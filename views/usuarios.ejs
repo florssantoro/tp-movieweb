@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Usuarios</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<h1>Usuarios</h1>
+
+<% if (users.length === 0) { %>
+    <p>Todavía no hay usuarios.</p>
+<% } else { %>
+    <ul>
+        <% users.forEach((user) => { %>
+            <li>
+                <strong><%= user.user_username %></strong>
+                — <%= user.user_name %>
+                (<%= user.user_email %>)
+            </li>
+        <% }); %>
+    </ul>
+<% } %>
+
+<p></p>
+<div id="inicio"><a href="/">Inicio</a></div>
+</body>
+</html>

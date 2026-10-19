@@ -13,7 +13,7 @@ CREATE TABLE movies.users (
 
 INSERT INTO movies.users (user_username, user_name, user_email) VALUES
                                                                     ('milob', 'Milo Blanco', 'milo@mail.com'),
-                                                                    ('LauC', 'Lautaro Cusinato', 'flor@mail.com');
+                                                                    ('LauC', 'Lautaro Cusinato', 'cuchi@mail.com');
 
 CREATE TABLE movies.movie_user (
                                    user_id  INT NOT NULL,

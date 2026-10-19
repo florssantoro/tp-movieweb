@@ -305,6 +305,26 @@ app.get('/keyword/resultados', async (req, res) => {
     }
 });
 
+// Ruta para listar todos los usuarios (PostgreSQL)
+app.get('/usuarios', async (req, res) => {
+    const usersQuery = `
+      SELECT user_id, user_username, user_name, user_email
+      FROM users
+      ORDER BY user_username ASC
+    `;
+
+    try {
+        const result = await db.query(usersQuery);
+
+        res.render('usuarios', {
+            users: result.rows,
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar los usuarios.');
+    }
+});
+
 
 if (require.main === module) {
     app.listen(port, () => {
