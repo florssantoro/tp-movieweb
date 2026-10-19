@@ -331,6 +331,8 @@ app.get('/usuarios', async (req, res) => {
 // Muestra el formulario vacío para crear un usuario
 app.get('/usuarios/nuevo', (req, res) => {
     res.render('usuario_form', {
+        title: 'Nuevo usuario',
+        action: '/usuarios/nuevo',
         error: null,
         values: { user_username: '', user_name: '', user_email: '' },
     });
@@ -346,6 +348,8 @@ app.post('/usuarios/nuevo', async (req, res) => {
 
     if (!values.user_username || !values.user_name || !values.user_email) {
         return res.status(400).render('usuario_form', {
+            title: 'Nuevo usuario',
+            action: '/usuarios/nuevo',
             error: 'Completá todos los campos.',
             values,
         });
@@ -362,12 +366,106 @@ app.post('/usuarios/nuevo', async (req, res) => {
     } catch (err) {
         if (err.code === '23505') {
             return res.status(400).render('usuario_form', {
+                title: 'Nuevo usuario',
+                action: '/usuarios/nuevo',
                 error: 'Ya existe un usuario con ese username o email.',
                 values,
             });
         }
         console.error(err);
         res.status(500).send('Error al crear el usuario.');
+    }
+});
+
+// Muestra el formulario con los datos actuales del usuario
+app.get('/usuarios/:id/editar', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    try {
+        const result = await db.query(
+            'SELECT user_username, user_name, user_email FROM users WHERE user_id = $1',
+            [userId]
+        );
+
+        if (result.rows.length === 0) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.render('usuario_form', {
+            title: 'Editar usuario',
+            action: `/usuarios/${userId}/editar`,
+            error: null,
+            values: result.rows[0],
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar el usuario.');
+    }
+});
+
+// Recibe el formulario y actualiza el usuario (PostgreSQL)
+app.post('/usuarios/:id/editar', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    const values = {
+        user_username: String(req.body.user_username || '').trim(),
+        user_name: String(req.body.user_name || '').trim(),
+        user_email: String(req.body.user_email || '').trim(),
+    };
+    const formOptions = { title: 'Editar usuario', action: `/usuarios/${userId}/editar`, values };
+
+    if (!values.user_username || !values.user_name || !values.user_email) {
+        return res.status(400).render('usuario_form', { ...formOptions, error: 'Completá todos los campos.' });
+    }
+
+    const updateQuery = `
+      UPDATE users
+      SET user_username = $1, user_name = $2, user_email = $3
+      WHERE user_id = $4
+    `;
+
+    try {
+        const result = await db.query(updateQuery, [values.user_username, values.user_name, values.user_email, userId]);
+
+        if (result.rowCount === 0) {
+            return res.status(404).send('Usuario no encontrado.');
+        }
+
+        res.redirect('/usuarios');
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).render('usuario_form', {
+                ...formOptions,
+                error: 'Ya existe un usuario con ese username o email.',
+            });
+        }
+        console.error(err);
+        res.status(500).send('Error al actualizar el usuario.');
+    }
+});
+
+// Borra un usuario (y por CASCADE, sus películas en movie_user)
+app.post('/usuarios/:id/eliminar', async (req, res) => {
+    const userId = Number(req.params.id);
+
+    if (!Number.isInteger(userId) || userId <= 0) {
+        return res.status(400).send('ID de usuario inválido.');
+    }
+
+    try {
+        await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+        res.redirect('/usuarios');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al eliminar el usuario.');
     }
 });
 

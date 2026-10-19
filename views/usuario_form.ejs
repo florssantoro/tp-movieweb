@@ -1,17 +1,17 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Nuevo usuario</title>
+    <title><%= title %></title>
     <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-<h1>Nuevo usuario</h1>
+<h1><%= title %></h1>
 
 <% if (error) { %>
     <p style="color: #b00020;"><%= error %></p>
 <% } %>
 
-<form action="/usuarios/nuevo" method="POST">
+<form action="<%= action %>" method="POST">
     <p>
         <label>Username<br>
             <input name="user_username" value="<%= values.user_username %>" maxlength="50" required>
