@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Nuevo usuario</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<h1>Nuevo usuario</h1>
+
+<% if (error) { %>
+    <p style="color: #b00020;"><%= error %></p>
+<% } %>
+
+<form action="/usuarios/nuevo" method="POST">
+    <p>
+        <label>Username<br>
+            <input name="user_username" value="<%= values.user_username %>" maxlength="50" required>
+        </label>
+    </p>
+    <p>
+        <label>Nombre<br>
+            <input name="user_name" value="<%= values.user_name %>" maxlength="100" required>
+        </label>
+    </p>
+    <p>
+        <label>Email<br>
+            <input name="user_email" type="email" value="<%= values.user_email %>" maxlength="255" required>
+        </label>
+    </p>
+    <button type="submit">Guardar</button>
+</form>
+
+<p></p>
+<div id="inicio"><a href="/usuarios">Volver a usuarios</a></div>
+</body>
+</html>

@@ -20,6 +20,9 @@ const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
 // Serve static files from the "views" directory
 app.use(express.static('views'));
 
+// Permite leer los datos enviados por formularios (req.body)
+app.use(express.urlencoded({ extended: false }));
+
 // Crear un "pool" de conexiones a PostgreSQL usando las variables de entorno
 const db = new Pool({
     user: process.env.DB_USER,
@@ -322,6 +325,49 @@ app.get('/usuarios', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar los usuarios.');
+    }
+});
+
+// Muestra el formulario vacío para crear un usuario
+app.get('/usuarios/nuevo', (req, res) => {
+    res.render('usuario_form', {
+        error: null,
+        values: { user_username: '', user_name: '', user_email: '' },
+    });
+});
+
+// Recibe el formulario y guarda el usuario (PostgreSQL)
+app.post('/usuarios/nuevo', async (req, res) => {
+    const values = {
+        user_username: String(req.body.user_username || '').trim(),
+        user_name: String(req.body.user_name || '').trim(),
+        user_email: String(req.body.user_email || '').trim(),
+    };
+
+    if (!values.user_username || !values.user_name || !values.user_email) {
+        return res.status(400).render('usuario_form', {
+            error: 'Completá todos los campos.',
+            values,
+        });
+    }
+
+    const insertQuery = `
+      INSERT INTO users (user_username, user_name, user_email)
+      VALUES ($1, $2, $3)
+    `;
+
+    try {
+        await db.query(insertQuery, [values.user_username, values.user_name, values.user_email]);
+        res.redirect('/usuarios');
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).render('usuario_form', {
+                error: 'Ya existe un usuario con ese username o email.',
+                values,
+            });
+        }
+        console.error(err);
+        res.status(500).send('Error al crear el usuario.');
     }
 });
 
