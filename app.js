@@ -10,7 +10,7 @@ require('dotenv').config();
 const express = require('express');
 
 const { Pool } = require('pg');
-const { getTmdbMovie } = require('./tmdb');
+const { getTmdbMovie, getTmdbPoster } = require('./tmdb');
 
 const app = express();
 const port = process.env.PORT || 3500;
@@ -91,6 +91,7 @@ app.get('/buscar', async (req, res) => {
             actors: actors.rows,
             directors: directors.rows,
             emptySearch: false,
+            query: searchTerm,
         });
     } catch (err) {
         console.error(err);
@@ -99,6 +100,22 @@ app.get('/buscar', async (req, res) => {
 });
 
 // Cargar cada relación por separado evita multiplicar las filas de elenco y equipo.
+// Póster de una película para las tarjetas: redirige a la imagen de TMDB (la API key queda en el servidor).
+app.get('/poster/:id', async (req, res) => {
+    const movieId = Number(req.params.id);
+    if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isInteger(movieId) || movieId > 2147483647) {
+        return res.status(400).send('ID de película inválido.');
+    }
+
+    const posterUrl = await (app.locals.loadTmdbPoster || getTmdbPoster)(movieId);
+    if (!posterUrl) {
+        return res.status(404).send('Póster no disponible.');
+    }
+
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.redirect(posterUrl);
+});
+
 app.get('/pelicula/:id', async (req, res) => {
     const movieId = Number(req.params.id);
     if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isInteger(movieId) || movieId > 2147483647) {

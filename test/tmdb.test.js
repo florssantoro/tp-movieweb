@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { getTmdbMovie } = require('../tmdb');
+const { getTmdbMovie, getTmdbPoster } = require('../tmdb');
 
 test('TMDB details use Spanish trailer when available', async () => {
     const calls = [];
@@ -54,4 +54,42 @@ test('TMDB failures and missing data leave the PostgreSQL page usable', async ()
         apiKey: 'test-key',
         fetchImpl: async () => ({ ok: false, status: 404 }),
     }), null);
+});
+
+test('TMDB poster lookup returns a small poster URL and caches it', async () => {
+    const calls = [];
+    const cache = new Map();
+    const options = {
+        apiKey: 'test-key',
+        cache,
+        fetchImpl: async (url) => {
+            calls.push(url);
+            return { ok: true, status: 200, json: async () => ({ poster_path: '/poster.jpg' }) };
+        },
+    };
+
+    const first = await getTmdbPoster(11, options);
+    const second = await getTmdbPoster(11, options);
+
+    assert.equal(first, 'https://image.tmdb.org/t/p/w342/poster.jpg');
+    assert.equal(second, first);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].searchParams.get('language'), 'es-AR');
+});
+
+test('TMDB poster lookup remembers missing posters but retries after errors', async () => {
+    const cache = new Map();
+    let calls = 0;
+    const missing = { apiKey: 'test-key', cache, fetchImpl: async () => { calls += 1; return { ok: false, status: 404 }; } };
+    assert.equal(await getTmdbPoster(1, missing), null);
+    assert.equal(await getTmdbPoster(1, missing), null);
+    assert.equal(calls, 1);
+
+    calls = 0;
+    const failing = { apiKey: 'test-key', cache, fetchImpl: async () => { calls += 1; throw new Error('network'); } };
+    assert.equal(await getTmdbPoster(2, failing), null);
+    assert.equal(await getTmdbPoster(2, failing), null);
+    assert.equal(calls, 2);
+
+    assert.equal(await getTmdbPoster(3, { apiKey: '', cache }), null);
 });

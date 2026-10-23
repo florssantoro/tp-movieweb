@@ -1,35 +1,46 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Resultados por palabra clave</title>
-    <link rel="stylesheet" href="/styles.css">
+<%- include('partials/head', { pageTitle: 'Resultados por palabra clave' }) %>
 </head>
 <body>
-<h1>Resultados por palabra clave</h1>
+<%- include('partials/header') %>
 
-<% if (emptySearch) { %>
-    <p>Ingresá una palabra clave para buscar.</p>
-<% } else { %>
+<main class="page">
+    <div class="container">
+        <header class="page-header">
+            <p class="eyebrow">Palabras clave</p>
+            <h1>Resultados por palabra clave</h1>
+        </header>
 
-<h2>Películas relacionadas con "<%= searchTerm %>"</h2>
-<% if (movies.length === 0) { %>
-    <p>No se encontraron películas con esa palabra clave.</p>
-<% } else { %>
-    <ul>
-        <% movies.forEach((movie) => { %>
-            <li>
-                <a href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
-                <% if (movie.release_date) { %>
-                    (<%= new Date(movie.release_date).getFullYear() %>)
-                <% } %>
-                — <strong>Palabras clave:</strong> <%= movie.keywords %>
-            </li>
-        <% }); %>
-    </ul>
-<% } %>
-<% } %>
+        <% if (emptySearch) { %>
+            <p class="empty">Ingresá una palabra clave para buscar.</p>
+        <% } else { %>
 
-<p></p>
-<div id="inicio"><a href="/keyword">Nueva búsqueda</a> · <a href="/">Inicio</a></div>
+        <section class="section" aria-labelledby="keyword-movies-heading">
+            <h2 class="section-title" id="keyword-movies-heading">Películas relacionadas con "<%= searchTerm %>" <span class="count"><%= movies.length %></span></h2>
+            <% if (movies.length === 0) { %>
+                <p class="empty">No se encontraron películas con esa palabra clave.</p>
+            <% } else { %>
+                <ul class="row-list">
+                    <% movies.forEach((movie) => { %>
+                        <li class="row">
+                            <span class="row-year"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : '—' %></span>
+                            <div class="row-body">
+                                <a class="row-title" href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
+                                <p class="row-detail"><strong>Palabras clave:</strong> <%= movie.keywords %></p>
+                            </div>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } %>
+        </section>
+        <% } %>
+
+        <a class="back-link" href="/keyword">← Nueva búsqueda</a>
+    </div>
+</main>
+
+<%- include('partials/footer') %>
 </body>
 </html>

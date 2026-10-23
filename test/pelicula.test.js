@@ -44,7 +44,7 @@ test('movie template progressively reveals cast and groups crew by department', 
             { person_name: 'Camarógrafa', job: 'Camera Operator', department_name: 'Camera' },
             { person_name: 'Compositor', job: 'Original Music Composer', department_name: 'Sound' },
         ],
-        genres: [], countries: [], languages: [], companies: [], keywords: [], tmdb: null,
+        genres: [], countries: [], languages: [], companies: [], keywords: [], tmdb: null, users: [],
     });
 
     assert.match(body, /Ver elenco completo \(13\)/);
