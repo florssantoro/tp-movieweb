@@ -1,51 +1,82 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Resultado de la Búsqueda</title>
-    <link rel="stylesheet" href="/styles.css">
+<%- include('partials/head', { pageTitle: 'Resultados' }) %>
 </head>
 <body>
-<h1>Resultado de la Búsqueda</h1>
+<%- include('partials/header') %>
+<%
+const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+%>
 
-<% if (emptySearch) { %>
-    <p>Ingresá una película, actor o director para buscar.</p>
-<% } else { %>
+<main class="page">
+    <div class="container">
+        <header class="page-header">
+            <p class="eyebrow">Búsqueda</p>
+            <h1><%= locals.query ? `Resultados para "${locals.query}"` : 'Resultado de la búsqueda' %></h1>
+        </header>
 
-<h2>Películas</h2>
-<% if (movies.length === 0) { %>
-    <p>No se encontraron películas.</p>
-<% } else { %>
-    <ul>
-        <% movies.forEach((movie) => { %>
-            <li><a href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a></li>
-        <% }); %>
-    </ul>
-<% } %>
+        <% if (emptySearch) { %>
+            <p class="empty">Ingresá una película, actor o director para buscar.</p>
+        <% } else { %>
 
-<h2>Actores</h2>
-<% if (actors.length === 0) { %>
-    <p>No se encontraron actores.</p>
-<% } else { %>
-    <ul>
-        <% actors.forEach((actor) => { %>
-            <li><a href="/actor/<%= actor.person_id %>"><%= actor.person_name %></a></li>
-        <% }); %>
-    </ul>
-<% } %>
+        <section class="section" aria-labelledby="movies-heading">
+            <h2 class="section-title" id="movies-heading">Películas <span class="count"><%= movies.length %></span></h2>
+            <% if (movies.length === 0) { %>
+                <p class="empty">No se encontraron películas.</p>
+            <% } else { %>
+                <ul class="tile-grid">
+                    <% movies.forEach((movie) => { %>
+                        <li>
+                            <a class="tile" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
+                                <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
+                                <span class="tile-title"><%= movie.title %></span>
+                            </a>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } %>
+        </section>
 
-<h2>Directores</h2>
-<% if (directors.length === 0) { %>
-    <p>No se encontraron directores.</p>
-<% } else { %>
-    <ul>
-        <% directors.forEach((director) => { %>
-            <li><a href="/director/<%= director.person_id %>"><%= director.person_name %></a></li>
-        <% }); %>
-    </ul>
-<% } %>
-<% } %>
+        <section class="section" aria-labelledby="actors-heading">
+            <h2 class="section-title" id="actors-heading">Actores <span class="count"><%= actors.length %></span></h2>
+            <% if (actors.length === 0) { %>
+                <p class="empty">No se encontraron actores.</p>
+            <% } else { %>
+                <ul class="person-grid">
+                    <% actors.forEach((actor) => { %>
+                        <li>
+                            <a class="person-card" href="/actor/<%= actor.person_id %>">
+                                <span class="avatar" aria-hidden="true"><%= initials(actor.person_name) %></span>
+                                <%= actor.person_name %>
+                            </a>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } %>
+        </section>
 
-<p></p>
-<div id="inicio"><a href="/">Inicio</a></div>
+        <section class="section" aria-labelledby="directors-heading">
+            <h2 class="section-title" id="directors-heading">Directores <span class="count"><%= directors.length %></span></h2>
+            <% if (directors.length === 0) { %>
+                <p class="empty">No se encontraron directores.</p>
+            <% } else { %>
+                <ul class="person-grid">
+                    <% directors.forEach((director) => { %>
+                        <li>
+                            <a class="person-card" href="/director/<%= director.person_id %>">
+                                <span class="avatar" aria-hidden="true"><%= initials(director.person_name) %></span>
+                                <%= director.person_name %>
+                            </a>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } %>
+        </section>
+        <% } %>
+    </div>
+</main>
+
+<%- include('partials/footer') %>
 </body>
 </html>

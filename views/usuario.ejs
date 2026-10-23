@@ -1,38 +1,59 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Perfil de <%= user.user_username %></title>
-    <link rel="stylesheet" href="/styles.css">
+<%- include('partials/head', { pageTitle: user.user_username }) %>
 </head>
 <body>
-<h1><%= user.user_username %></h1>
-<p><strong>Nombre:</strong> <%= user.user_name %></p>
-<p><strong>Email:</strong> <%= user.user_email %></p>
-<p><a href="/usuarios/<%= user.user_id %>/editar">Editar usuario</a></p>
+<%- include('partials/header') %>
+<%
+const initials = String(user.user_name || user.user_username || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+%>
 
-<h2>Películas</h2>
-<% if (movies.length === 0) { %>
-    <p>Este usuario todavía no calificó ninguna película.</p>
-<% } else { %>
-    <ul>
-        <% movies.forEach((movie) => { %>
-            <li>
-                <a href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
-                <% if (movie.release_date) { %>
-                    (<%= new Date(movie.release_date).getFullYear() %>)
-                <% } %>
-                <% if (movie.rating) { %>
-                    — <strong>Puntuación:</strong> <%= '★'.repeat(movie.rating) %><%= '☆'.repeat(5 - movie.rating) %>
-                <% } %>
-                <% if (movie.opinion) { %>
-                    <br><em>"<%= movie.opinion %>"</em>
-                <% } %>
-            </li>
-        <% }); %>
-    </ul>
-<% } %>
+<main class="page">
+    <div class="container">
+        <header class="profile-head">
+            <span class="avatar avatar-lg" aria-hidden="true"><%= initials %></span>
+            <div>
+                <p class="eyebrow">Perfil</p>
+                <h1><%= user.user_username %></h1>
+                <p class="profile-meta"><%= user.user_name %> · <%= user.user_email %></p>
+            </div>
+            <div class="profile-actions">
+                <a class="btn btn-ghost btn-sm" href="/usuarios/<%= user.user_id %>/editar">Editar usuario</a>
+            </div>
+        </header>
 
-<p></p>
-<div id="inicio"><a href="/usuarios">Volver a usuarios</a> · <a href="/">Inicio</a></div>
+        <section class="section" aria-labelledby="user-movies-heading">
+            <h2 class="section-title" id="user-movies-heading">Películas <span class="count"><%= movies.length %></span></h2>
+            <% if (movies.length === 0) { %>
+                <p class="empty">Este usuario todavía no calificó ninguna película.</p>
+            <% } else { %>
+                <ul class="row-list">
+                    <% movies.forEach((movie) => { %>
+                        <li class="row">
+                            <span class="row-year"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : '—' %></span>
+                            <div class="row-body">
+                                <a class="row-title" href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
+                                <% if (movie.rating) { %>
+                                    <p class="row-detail">
+                                        <strong>Puntuación:</strong>
+                                        <span class="stars" aria-label="<%= movie.rating %> de 5"><%= '★'.repeat(movie.rating) %><span class="stars-off"><%= '★'.repeat(5 - movie.rating) %></span></span>
+                                    </p>
+                                <% } %>
+                                <% if (movie.opinion) { %>
+                                    <p class="quote">"<%= movie.opinion %>"</p>
+                                <% } %>
+                            </div>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } %>
+        </section>
+
+        <a class="back-link" href="/usuarios">← Volver a usuarios</a>
+    </div>
+</main>
+
+<%- include('partials/footer') %>
 </body>
 </html>

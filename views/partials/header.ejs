@@ -1,0 +1,14 @@
+<header class="site-header">
+    <div class="container site-header-inner">
+        <a class="brand" href="/">MovieWeb</a>
+        <nav class="site-nav" aria-label="Principal">
+            <a href="/keyword">Palabras clave</a>
+            <a href="/usuarios">Usuarios</a>
+        </nav>
+        <% if (locals.showSearch !== false) { %>
+            <form class="header-search" action="/buscar" method="GET" role="search">
+                <input type="search" name="q" value="<%= locals.query || '' %>" placeholder="Buscar películas, actores o directores" aria-label="Buscar películas, actores o directores">
+            </form>
+        <% } %>
+    </div>
+</header>

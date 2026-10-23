@@ -21,6 +21,7 @@ after(async () => {
 
 afterEach(() => {
     delete app.locals.loadTmdbMovie;
+    delete app.locals.loadTmdbPoster;
 });
 
 test('empty search shows guidance without result sections', async () => {
@@ -181,4 +182,26 @@ test('movie detail handles invalid and missing IDs', async () => {
     assert.equal(invalid.status, 400);
     assert.equal(outOfRange.status, 400);
     assert.equal(missing.status, 404);
+});
+
+test('search results load movie posters through the poster route', async () => {
+    const response = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent('Star Wars')}`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, /src="\/poster\/11"/);
+});
+
+test('poster route redirects to TMDB and handles missing or invalid posters', async () => {
+    app.locals.loadTmdbPoster = async (movieId) => (movieId === 11 ? 'https://image.tmdb.org/t/p/w342/poster.jpg' : null);
+
+    const found = await fetch(`${baseUrl}/poster/11`, { redirect: 'manual' });
+    assert.equal(found.status, 302);
+    assert.equal(found.headers.get('location'), 'https://image.tmdb.org/t/p/w342/poster.jpg');
+
+    const missing = await fetch(`${baseUrl}/poster/12`, { redirect: 'manual' });
+    assert.equal(missing.status, 404);
+
+    const invalid = await fetch(`${baseUrl}/poster/abc`, { redirect: 'manual' });
+    assert.equal(invalid.status, 400);
 });

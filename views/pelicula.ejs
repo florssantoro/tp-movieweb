@@ -1,10 +1,7 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><%= movie.title %> · MovieWeb</title>
-    <link rel="stylesheet" href="/styles.css">
+<%- include('partials/head', { pageTitle: movie.title }) %>
 </head>
 <body class="movie-page">
 <%
@@ -27,12 +24,9 @@ const crewDepartments = otherCrew.reduce((groups, member) => {
 const primaryOverview = tmdb?.overview || movie.overview;
 %>
 
-<header class="movie-header">
-    <a class="movie-brand" href="/">MovieWeb</a>
-    <a class="movie-back" href="/">Volver al inicio</a>
-</header>
+<%- include('partials/header') %>
 
-<main class="movie-main">
+<div class="movie-hero"<% if (tmdb?.posterUrl) { %> style="--backdrop: url('<%= tmdb.posterUrl %>')"<% } %>>
     <div class="movie-lead">
         <div class="movie-poster">
             <% if (tmdb?.posterUrl) { %>
@@ -54,10 +48,13 @@ const primaryOverview = tmdb?.overview || movie.overview;
             <div class="movie-links">
                 <% if (tmdb?.url) { %><a href="<%= tmdb.url %>" target="_blank" rel="noopener noreferrer">Ficha en TMDB ↗</a><% } %>
                 <% if (tmdb?.trailerUrl) { %><a href="#trailer">Ver tráiler ↓</a><% } %>
+                <a href="#rate-heading">Calificar ↓</a>
             </div>
         </div>
     </div>
+</div>
 
+<main class="movie-main">
     <section class="movie-section" aria-labelledby="synopsis-heading">
         <h2 id="synopsis-heading">Sinopsis</h2>
         <% if (primaryOverview) { %>
@@ -150,44 +147,50 @@ const primaryOverview = tmdb?.overview || movie.overview;
         <% if (users.length === 0) { %>
             <p class="movie-muted">No hay usuarios. <a href="/usuarios/nuevo">Creá uno</a> para poder calificar.</p>
         <% } else { %>
-            <form action="/pelicula/<%= movie.movie_id %>/calificar" method="POST">
-                <p>
-                    <label>Usuario<br>
-                        <select name="user_id" required>
+            <form class="form-card movie-rate" action="/pelicula/<%= movie.movie_id %>/calificar" method="POST">
+                <div class="form-row">
+                    <div class="field">
+                        <label for="rate-user">Usuario</label>
+                        <select class="select" id="rate-user" name="user_id" required>
                             <% users.forEach((user) => { %>
                                 <option value="<%= user.user_id %>"><%= user.user_username %></option>
                             <% }); %>
                         </select>
-                    </label>
-                </p>
-                <p>
-                    <label>Puntuación<br>
-                        <select name="rating">
+                    </div>
+                    <div class="field">
+                        <label for="rate-stars">Puntuación</label>
+                        <select class="select" id="rate-stars" name="rating">
                             <option value="">Sin puntuación</option>
                             <% for (let stars = 5; stars >= 1; stars--) { %>
                                 <option value="<%= stars %>"><%= '★'.repeat(stars) %> (<%= stars %>)</option>
                             <% } %>
                         </select>
-                    </label>
-                </p>
-                <p>
-                    <label>Opinión<br>
-                        <textarea name="opinion" rows="4" cols="50" placeholder="¿Qué te pareció?"></textarea>
-                    </label>
-                </p>
-                <button type="submit">Guardar</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label for="rate-opinion">Opinión</label>
+                    <textarea class="textarea" id="rate-opinion" name="opinion" rows="4" placeholder="¿Qué te pareció?"></textarea>
+                </div>
+                <div class="form-actions">
+                    <button class="btn" type="submit">Guardar</button>
+                </div>
             </form>
         <% } %>
     </section>
 </main>
 
-<footer class="movie-footer">
-    <% if (tmdb) { %>
-        <div class="movie-attribution">
-            <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer"><img src="/tmdb-logo.svg" alt="TMDB" width="54" height="39"></a>
-        </div>
-    <% } %>
-    <a href="/">MovieWeb</a>
+<footer class="site-footer">
+    <div class="container">
+        <a class="brand" href="/">MovieWeb</a>
+        <% if (tmdb) { %>
+            <div class="movie-attribution">
+                <span>Imágenes y tráiler de</span>
+                <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer"><img src="/tmdb-logo.svg" alt="TMDB" width="54" height="39"></a>
+            </div>
+        <% } else { %>
+            <span>Trabajo práctico · Bases de Datos 2026</span>
+        <% } %>
+    </div>
 </footer>
 </body>
 </html>

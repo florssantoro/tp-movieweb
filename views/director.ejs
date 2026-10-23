@@ -1,26 +1,42 @@
 <!DOCTYPE html>
-<html>
+<html lang="es">
 <head>
-    <title>Perfil de <%= person.person_name %></title>
-    <link rel="stylesheet" href="/styles.css">
+<%- include('partials/head', { pageTitle: person.person_name }) %>
 </head>
 <body>
-<h1><%= person.person_name %></h1>
-<p><strong>Perfil:</strong> Director</p>
+<%- include('partials/header') %>
+<%
+const initials = String(person.person_name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+%>
 
-<h2>Filmografía</h2>
-<ul>
-    <% credits.forEach((credit) => { %>
-        <li>
-            <a href="/pelicula/<%= credit.movie_id %>"><%= credit.title %></a>
-            <% if (credit.release_date) { %>
-                (<%= new Date(credit.release_date).getFullYear() %>)
-            <% } %>
-            — <strong>Rol:</strong> <%= credit.role %>
-        </li>
-    <% }); %>
-</ul>
-<p></p>
-<div id="inicio"><a href="/">Inicio</a></div>
+<main class="page">
+    <div class="container">
+        <header class="profile-head">
+            <span class="avatar avatar-lg" aria-hidden="true"><%= initials %></span>
+            <div>
+                <p class="eyebrow">Director</p>
+                <h1><%= person.person_name %></h1>
+                <p class="profile-meta"><%= credits.length %> <%= credits.length === 1 ? 'película' : 'películas' %></p>
+            </div>
+        </header>
+
+        <section class="section" aria-labelledby="filmography-heading">
+            <h2 class="section-title" id="filmography-heading">Filmografía</h2>
+            <ul class="row-list">
+                <% credits.forEach((credit) => { %>
+                    <li class="row">
+                        <span class="row-year"><%= credit.release_date ? new Date(credit.release_date).getFullYear() : '—' %></span>
+                        <div class="row-body">
+                            <a class="row-title" href="/pelicula/<%= credit.movie_id %>"><%= credit.title %></a>
+                            <p class="row-detail"><strong>Rol:</strong> <%= credit.role %></p>
+                        </div>
+                    </li>
+                <% }); %>
+            </ul>
+        </section>
+    </div>
+</main>
+
+<%- include('partials/footer') %>
 </body>
 </html>
