@@ -215,44 +215,93 @@ test('movie detail remains available when user tables are unavailable', async ()
     const body = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(body, /Las calificaciones no están disponibles/);
-    assert.doesNotMatch(body, /action="\/pelicula\/238\/calificar"/);
+    assert.match(body, /Las interacciones no están disponibles/);
+    assert.doesNotMatch(body, /action="\/pelicula\/238\/interaccion"/);
 });
 
-test('users can be created, viewed, edited and deleted', async () => {
+test('users can register, log in, edit their own profile and delete their account', async () => {
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const username = `test-${suffix}`.slice(0, 50);
     const email = `${suffix}@example.com`;
+    const password = 'Password-123!';
     let userId;
 
     try {
-        const created = await fetch(`${baseUrl}/usuarios/nuevo`, {
+        const protectedProfile = await fetch(`${baseUrl}/perfil`, { redirect: 'manual' });
+        assert.equal(protectedProfile.status, 302);
+        assert.equal(protectedProfile.headers.get('location'), '/login');
+
+        const created = await fetch(`${baseUrl}/registro`, {
             method: 'POST',
             redirect: 'manual',
-            body: new URLSearchParams({ user_username: username, user_name: 'Usuario Test', user_email: email }),
+            body: new URLSearchParams({ user_username: username, user_name: 'Usuario Test', user_email: email, password, password_confirmation: password }),
         });
         assert.equal(created.status, 302);
-        assert.equal(created.headers.get('location'), '/usuarios');
+        assert.equal(created.headers.get('location'), '/perfil');
+        const cookie = created.headers.get('set-cookie').split(';')[0];
+
+        const duplicate = await fetch(`${baseUrl}/registro`, {
+            method: 'POST',
+            body: new URLSearchParams({ user_username: username.toUpperCase(), user_name: 'Duplicado', user_email: `other-${email}`, password, password_confirmation: password }),
+        });
+        assert.equal(duplicate.status, 400);
+        assert.match(await duplicate.text(), /Ya existe un usuario/);
 
         const saved = await db.query('SELECT user_id FROM users WHERE user_username = $1', [username]);
         assert.equal(saved.rows.length, 1);
         userId = saved.rows[0].user_id;
 
-        const profile = await fetch(`${baseUrl}/usuarios/${userId}`);
+        const profile = await fetch(`${baseUrl}/perfil`, { headers: { cookie } });
         assert.equal(profile.status, 200);
         assert.match(await profile.text(), /Usuario Test/);
 
-        const edited = await fetch(`${baseUrl}/usuarios/${userId}/editar`, {
+        const edited = await fetch(`${baseUrl}/perfil/editar`, {
             method: 'POST',
             redirect: 'manual',
+            headers: { cookie },
             body: new URLSearchParams({ user_username: username, user_name: 'Usuario Editado', user_email: email }),
         });
-        assert.equal(edited.status, 302);
+        assert.equal(edited.status, 200);
 
         const updated = await db.query('SELECT user_name FROM users WHERE user_id = $1', [userId]);
         assert.equal(updated.rows[0].user_name, 'Usuario Editado');
 
-        const deleted = await fetch(`${baseUrl}/usuarios/${userId}/eliminar`, { method: 'POST', redirect: 'manual' });
+        const oldUserRoute = await fetch(`${baseUrl}/usuarios/1/editar`, { redirect: 'manual', headers: { cookie } });
+        assert.equal(oldUserRoute.status, userId === 1 ? 302 : 403);
+
+        const publicUsers = await fetch(`${baseUrl}/usuarios`);
+        const publicBody = await publicUsers.text();
+        assert.equal(publicUsers.status, 200);
+        assert.ok(publicBody.includes(username));
+        assert.doesNotMatch(publicBody, new RegExp(email));
+        assert.doesNotMatch(publicBody, /Eliminar|Editar/);
+        const publicProfile = await fetch(`${baseUrl}/usuarios/${userId}`);
+        const publicProfileBody = await publicProfile.text();
+        assert.equal(publicProfile.status, 200);
+        assert.doesNotMatch(publicProfileBody, new RegExp(email));
+        assert.doesNotMatch(publicProfileBody, /Editar perfil|Editar interacción/);
+
+        const newPassword = 'Password-456!';
+        const passwordChanged = await fetch(`${baseUrl}/perfil/password`, {
+            method: 'POST', headers: { cookie }, body: new URLSearchParams({ current_password: password, new_password: newPassword, password_confirmation: newPassword }),
+        });
+        assert.equal(passwordChanged.status, 200);
+
+        const loggedOut = await fetch(`${baseUrl}/logout`, { method: 'POST', redirect: 'manual', headers: { cookie } });
+        assert.equal(loggedOut.status, 302);
+        const oldLogin = await fetch(`${baseUrl}/login`, {
+            method: 'POST', body: new URLSearchParams({ identifier: email, password }),
+        });
+        assert.equal(oldLogin.status, 401);
+        const login = await fetch(`${baseUrl}/login`, {
+            method: 'POST', redirect: 'manual', body: new URLSearchParams({ identifier: email, password: newPassword }),
+        });
+        assert.equal(login.status, 302);
+        const loginCookie = login.headers.get('set-cookie').split(';')[0];
+
+        const deleted = await fetch(`${baseUrl}/perfil/eliminar`, {
+            method: 'POST', redirect: 'manual', headers: { cookie: loginCookie }, body: new URLSearchParams({ password: newPassword }),
+        });
         assert.equal(deleted.status, 302);
         const remaining = await db.query('SELECT 1 FROM users WHERE user_id = $1', [userId]);
         assert.equal(remaining.rows.length, 0);
@@ -262,47 +311,94 @@ test('users can be created, viewed, edited and deleted', async () => {
     }
 });
 
-test('ratings and opinions are persisted and shown on the user profile', async () => {
+test('registration rejects invalid account data', async () => {
+    const response = await fetch(`${baseUrl}/registro`, {
+        method: 'POST',
+        body: new URLSearchParams({ user_username: 'a b', user_name: 'Nombre', user_email: 'no-es-email', password: 'short', password_confirmation: 'different' }),
+    });
+    assert.equal(response.status, 400);
+    assert.match(await response.text(), /username debe tener entre 3 y 50/);
+
     const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    const username = `rating-${suffix}`.slice(0, 50);
-    const opinion = `Opinión de prueba ${suffix}`;
-    const user = await db.query(
-        'INSERT INTO users (user_username, user_name, user_email) VALUES ($1, $2, $3) RETURNING user_id',
-        [username, 'Usuario Rating', `${suffix}@example.com`]
-    );
-    const userId = user.rows[0].user_id;
+    const truncated = '😀'.repeat(20);
+    const longPassword = await fetch(`${baseUrl}/registro`, {
+        method: 'POST',
+        body: new URLSearchParams({ user_username: `emoji-${suffix}`.slice(0, 50), user_name: 'Emoji', user_email: `${suffix}@example.com`, password: truncated, password_confirmation: truncated }),
+    });
+    assert.equal(longPassword.status, 400);
+    assert.match(await longPassword.text(), /contraseña es demasiado larga/);
+});
+
+test('sensitive account actions reject passwords that bcrypt would truncate', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const username = `limit-${suffix}`.slice(0, 50);
+    const email = `${suffix}@example.com`;
+    const password = 'A'.repeat(72);
+    const truncatedVariant = `${password}B`;
+    let userId;
 
     try {
-        const response = await fetch(`${baseUrl}/pelicula/238/calificar`, {
+        const created = await fetch(`${baseUrl}/registro`, {
             method: 'POST',
             redirect: 'manual',
-            body: new URLSearchParams({ user_id: String(userId), rating: '4', opinion }),
+            body: new URLSearchParams({
+                user_username: username,
+                user_name: 'Password Limit',
+                user_email: email,
+                password,
+                password_confirmation: password,
+            }),
         });
-        assert.equal(response.status, 302);
-        assert.equal(response.headers.get('location'), `/usuarios/${userId}`);
+        assert.equal(created.status, 302);
+        const cookie = created.headers.get('set-cookie').split(';')[0];
+        userId = (await db.query('SELECT user_id FROM users WHERE user_username = $1', [username])).rows[0].user_id;
 
-        const saved = await db.query(
-            'SELECT rating, opinion FROM movie_user WHERE user_id = $1 AND movie_id = $2',
-            [userId, 238]
-        );
-        assert.deepEqual(saved.rows[0], { rating: 4, opinion });
+        const settings = await (await fetch(`${baseUrl}/perfil/editar`, { headers: { cookie } })).text();
+        assert.match(settings, /name="user_username"[^>]*minlength="3"[^>]*maxlength="50"[^>]*pattern=/);
+        assert.match(settings, /name="current_password"[^>]*maxlength="72"/);
+        assert.match(settings, /id="delete_password"[^>]*maxlength="72"/);
 
-        const profile = await fetch(`${baseUrl}/usuarios/${userId}`);
-        const body = await profile.text();
-        assert.equal(profile.status, 200);
-        assert.match(body, /aria-label="4 de 5"/);
-        assert.ok(body.includes(opinion));
+        const changed = await fetch(`${baseUrl}/perfil/password`, {
+            method: 'POST',
+            headers: { cookie },
+            body: new URLSearchParams({
+                current_password: truncatedVariant,
+                new_password: 'Replacement-Password-2026!',
+                password_confirmation: 'Replacement-Password-2026!',
+            }),
+        });
+        assert.equal(changed.status, 400);
+        assert.match(await changed.text(), /contraseña actual es incorrecta/);
+
+        const deleted = await fetch(`${baseUrl}/perfil/eliminar`, {
+            method: 'POST',
+            headers: { cookie },
+            body: new URLSearchParams({ password: truncatedVariant }),
+        });
+        assert.equal(deleted.status, 400);
+        assert.equal((await db.query('SELECT count(*)::int AS count FROM users WHERE user_id = $1', [userId])).rows[0].count, 1);
     } finally {
-        await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+        if (userId) await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
     }
 });
 
-test('rating route rejects values outside the supported range', async () => {
+test('auth forms expose the same basic limits enforced by the server', async () => {
+    const registration = await (await fetch(`${baseUrl}/registro`)).text();
+    assert.match(registration, /name="user_username"[^>]*minlength="3"[^>]*maxlength="50"[^>]*pattern=/);
+    assert.match(registration, /name="password"[^>]*minlength="8"[^>]*maxlength="72"/);
+
+    const login = await (await fetch(`${baseUrl}/login`)).text();
+    assert.match(login, /name="identifier"[^>]*maxlength="255"/);
+    assert.match(login, /name="password"[^>]*maxlength="72"/);
+});
+
+test('interaction routes require a logged-in user', async () => {
     const response = await fetch(`${baseUrl}/pelicula/238/calificar`, {
         method: 'POST',
-        body: new URLSearchParams({ user_id: '1', rating: '6', opinion: '' }),
+        redirect: 'manual',
+        body: new URLSearchParams({ rating: '4', opinion: '' }),
     });
 
-    assert.equal(response.status, 400);
-    assert.match(await response.text(), /número del 1 al 5/);
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('location'), '/login');
 });

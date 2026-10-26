@@ -48,7 +48,7 @@ const primaryOverview = tmdb?.overview || movie.overview;
             <div class="movie-links">
                 <% if (tmdb?.url) { %><a href="<%= tmdb.url %>" target="_blank" rel="noopener noreferrer">Ficha en TMDB ↗</a><% } %>
                 <% if (tmdb?.trailerUrl) { %><a href="#trailer">Ver tráiler ↓</a><% } %>
-                <a href="#rate-heading">Calificar ↓</a>
+                <a href="#rate-heading">Guardar o valorar ↓</a>
             </div>
         </div>
     </div>
@@ -143,20 +143,26 @@ const primaryOverview = tmdb?.overview || movie.overview;
     </section>
     
     <section class="movie-section" aria-labelledby="rate-heading">
-        <h2 id="rate-heading">Calificar esta película</h2>
+        <% const activeUser = locals.selectedUser || null; const savedInteraction = locals.interaction || null; %>
+        <h2 id="rate-heading">Tu relación con esta película</h2>
         <% if (!ratingsAvailable) { %>
-            <p class="movie-muted">Las calificaciones no están disponibles hasta configurar las tablas de usuarios.</p>
-        <% } else if (users.length === 0) { %>
-            <p class="movie-muted">No hay usuarios. <a href="/usuarios/nuevo">Creá uno</a> para poder calificar.</p>
-        <% } else { %>
-            <form class="form-card movie-rate" action="/pelicula/<%= movie.movie_id %>/calificar" method="POST">
+            <p class="movie-muted">Las interacciones no están disponibles temporalmente.</p>
+        <% } else if (!activeUser) { %>
+            <div class="auth-callout">
+                <p>Ingresá a tu cuenta para guardar esta película, puntuarla o escribir una opinión.</p>
+                <div class="form-actions"><a class="btn" href="/login">Ingresar</a><a class="btn btn-ghost" href="/registro">Crear cuenta</a></div>
+            </div>
+        <% } else { const saved = savedInteraction || {}; %>
+            <form class="form-card movie-rate" action="/pelicula/<%= movie.movie_id %>/interaccion" method="POST">
+                <p class="interaction-summary"><strong><%= activeUser.user_username %></strong> · <%= savedInteraction ? [saved.is_favorite ? 'Favorita' : '', saved.watch_status === 'want_to_watch' ? 'Quiero ver' : saved.watch_status === 'watched' ? 'Vista' : '', saved.rating ? `${saved.rating}/5` : '', saved.opinion ? 'Con opinión' : ''].filter(Boolean).join(' · ') || 'Sin estados guardados' : 'Todavía no guardaste esta película' %></p>
+                <label class="favorite-control"><input type="checkbox" name="is_favorite" <%= saved.is_favorite ? 'checked' : '' %>> Favorita</label>
                 <div class="form-row">
                     <div class="field">
-                        <label for="rate-user">Usuario</label>
-                        <select class="select" id="rate-user" name="user_id" required>
-                            <% users.forEach((user) => { %>
-                                <option value="<%= user.user_id %>"><%= user.user_username %></option>
-                            <% }); %>
+                        <label for="watch-status">En tu lista</label>
+                        <select class="select" id="watch-status" name="watch_status">
+                            <option value="">Sin estado</option>
+                            <option value="want_to_watch" <%= saved.watch_status === 'want_to_watch' ? 'selected' : '' %>>Quiero ver</option>
+                            <option value="watched" <%= saved.watch_status === 'watched' ? 'selected' : '' %>>Vista</option>
                         </select>
                     </div>
                     <div class="field">
@@ -164,19 +170,26 @@ const primaryOverview = tmdb?.overview || movie.overview;
                         <select class="select" id="rate-stars" name="rating">
                             <option value="">Sin puntuación</option>
                             <% for (let stars = 5; stars >= 1; stars--) { %>
-                                <option value="<%= stars %>"><%= '★'.repeat(stars) %> (<%= stars %>)</option>
+                                <option value="<%= stars %>" <%= saved.rating === stars ? 'selected' : '' %>><%= '★'.repeat(stars) %> (<%= stars %>)</option>
                             <% } %>
                         </select>
                     </div>
                 </div>
                 <div class="field">
                     <label for="rate-opinion">Opinión</label>
-                    <textarea class="textarea" id="rate-opinion" name="opinion" rows="4" placeholder="¿Qué te pareció?"></textarea>
+                    <textarea class="textarea" id="rate-opinion" name="opinion" rows="4" maxlength="1000" aria-describedby="opinion-help" placeholder="¿Qué te pareció?"><%= saved.opinion || '' %></textarea>
+                    <small id="opinion-help" class="movie-muted">Opcional · Hasta 1000 caracteres.</small>
                 </div>
                 <div class="form-actions">
-                    <button class="btn" type="submit">Guardar</button>
+                    <button class="btn" type="submit" name="action" value="save">Guardar cambios</button>
                 </div>
             </form>
+            <% if (savedInteraction) { %>
+            <form class="interaction-remove" action="/pelicula/<%= movie.movie_id %>/interaccion" method="POST" onsubmit="return confirm('¿Quitar esta película de tu perfil junto con su puntuación y opinión?');">
+                <button class="btn btn-ghost btn-sm" type="submit" name="action" value="remove">Quitar asociación</button>
+                <small class="movie-muted">También elimina tu puntuación y opinión.</small>
+            </form>
+            <% } %>
         <% } %>
     </section>
 </main>

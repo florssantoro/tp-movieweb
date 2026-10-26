@@ -1,50 +1,24 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-<%- include('partials/head', { pageTitle: 'Usuarios' }) %>
-</head>
+<head><%- include('partials/head', { pageTitle: 'Usuarios' }) %></head>
 <body>
 <%- include('partials/header') %>
 <%
 const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 %>
-
-<main class="page">
-    <div class="container">
-        <div class="toolbar">
-            <header class="page-header">
-                <p class="eyebrow">Comunidad</p>
-                <h1>Usuarios</h1>
-                <p><%= users.length %> <%= users.length === 1 ? 'usuario registrado' : 'usuarios registrados' %></p>
-            </header>
-            <a class="btn" href="/usuarios/nuevo">+ Nuevo usuario</a>
-        </div>
-
-        <% if (users.length === 0) { %>
-            <p class="empty">Todavía no hay usuarios.</p>
-        <% } else { %>
-            <ul class="user-list">
-                <% users.forEach((user) => { %>
-                    <li class="user-row">
-                        <span class="avatar" aria-hidden="true"><%= initials(user.user_name || user.user_username) %></span>
-                        <div class="user-info">
-                            <a href="/usuarios/<%= user.user_id %>"><%= user.user_username %></a>
-                            <p><%= user.user_name %> · <%= user.user_email %></p>
-                        </div>
-                        <div class="user-actions">
-                            <a class="btn btn-ghost btn-sm" href="/usuarios/<%= user.user_id %>/editar">Editar</a>
-                            <form action="/usuarios/<%= user.user_id %>/eliminar" method="POST"
-                                  data-confirm="¿Eliminar a <%= user.user_username %>?" onsubmit="return confirm(this.dataset.confirm);">
-                                <button class="btn btn-danger btn-sm" type="submit">Eliminar</button>
-                            </form>
-                        </div>
-                    </li>
-                <% }); %>
-            </ul>
-        <% } %>
-    </div>
-</main>
-
+<main class="page"><div class="container">
+    <header class="page-header"><p class="eyebrow">Comunidad</p><h1>Usuarios</h1><p>Perfiles y películas compartidas por la comunidad.</p></header>
+    <% if (users.length === 0) { %><p class="empty">Todavía no hay usuarios.</p><% } else { %>
+    <ul class="user-list">
+        <% users.forEach((user) => { %>
+        <li class="user-row">
+            <span class="avatar" aria-hidden="true"><%= initials(user.user_name || user.user_username) %></span>
+            <div class="user-info"><a href="/usuarios/<%= user.user_id %>"><%= user.user_username %></a><p><%= user.user_name %></p></div>
+        </li>
+        <% }); %>
+    </ul>
+    <% } %>
+    <% if (!locals.currentUser) { %><div class="form-actions community-actions"><a class="btn" href="/registro">Crear mi cuenta</a><a class="btn btn-ghost" href="/login">Ingresar</a></div><% } %>
+</div></main>
 <%- include('partials/footer') %>
-</body>
-</html>
+</body></html>

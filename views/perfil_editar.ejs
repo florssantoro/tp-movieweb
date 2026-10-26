@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><%- include('partials/head', { pageTitle: 'Editar perfil' }) %></head>
+<body>
+<%- include('partials/header') %>
+<main class="page"><div class="container settings-layout">
+    <header class="page-header"><p class="eyebrow">Tu cuenta</p><h1>Editar perfil</h1><p>Administrá tus datos y la seguridad de tu cuenta.</p></header>
+    <% if (error) { %><p class="alert settings-message" role="alert"><%= error %></p><% } %>
+    <% if (success) { %><p class="notice settings-message" role="status"><%= success %></p><% } %>
+    <section class="settings-section" aria-labelledby="profile-data"><h2 id="profile-data">Datos personales</h2>
+        <form class="form-card" action="/perfil/editar" method="POST">
+            <div class="field"><label for="user_username">Username</label><input class="input" id="user_username" name="user_username" value="<%= values.user_username %>" minlength="3" maxlength="50" pattern="[A-Za-z0-9._-]{3,50}" title="Usá entre 3 y 50 letras, números, puntos, guiones o guiones bajos." autocomplete="username" required></div>
+            <div class="field"><label for="user_name">Nombre</label><input class="input" id="user_name" name="user_name" value="<%= values.user_name %>" maxlength="100" autocomplete="name" required></div>
+            <div class="field"><label for="user_email">Email</label><input class="input" id="user_email" name="user_email" type="email" value="<%= values.user_email %>" maxlength="255" autocomplete="email" required></div>
+            <button class="btn" type="submit">Guardar datos</button>
+        </form>
+    </section>
+    <section class="settings-section" aria-labelledby="profile-password"><h2 id="profile-password">Cambiar contraseña</h2>
+        <form class="form-card" action="/perfil/password" method="POST">
+            <div class="field"><label for="current_password">Contraseña actual</label><input class="input" id="current_password" name="current_password" type="password" maxlength="72" autocomplete="current-password" required></div>
+            <div class="field"><label for="new_password">Nueva contraseña</label><input class="input" id="new_password" name="new_password" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></div>
+            <div class="field"><label for="password_confirmation">Repetir nueva contraseña</label><input class="input" id="password_confirmation" name="password_confirmation" type="password" minlength="8" maxlength="72" autocomplete="new-password" required></div>
+            <button class="btn" type="submit">Actualizar contraseña</button>
+        </form>
+    </section>
+    <section class="settings-section danger-zone" aria-labelledby="delete-account"><h2 id="delete-account">Eliminar cuenta</h2><p>Se eliminarán también tus películas, puntuaciones y opiniones.</p>
+        <form class="form-card" action="/perfil/eliminar" method="POST" onsubmit="return confirm('¿Eliminar tu cuenta definitivamente?');">
+            <div class="field"><label for="delete_password">Confirmá tu contraseña</label><input class="input" id="delete_password" name="password" type="password" maxlength="72" autocomplete="current-password" required></div>
+            <button class="btn btn-danger" type="submit">Eliminar mi cuenta</button>
+        </form>
+    </section>
+    <a class="back-link" href="/perfil">← Volver al perfil</a>
+</div></main>
+<%- include('partials/footer') %>
+</body></html>

@@ -3,7 +3,13 @@
         <a class="brand" href="/">MovieWeb</a>
         <nav class="site-nav" aria-label="Principal">
             <a href="/keyword">Palabras clave</a>
-            <a href="/usuarios">Usuarios</a>
+            <% if (locals.currentUser) { %>
+                <a href="/perfil">Perfil</a>
+                <form class="nav-form" action="/logout" method="POST"><button type="submit">Salir</button></form>
+            <% } else { %>
+                <a href="/login">Ingresar</a>
+                <a href="/registro">Crear cuenta</a>
+            <% } %>
         </nav>
         <% if (locals.showSearch !== false) { %>
             <form class="header-search" action="/buscar" method="GET" role="search">
