@@ -16,17 +16,19 @@ const initials = String(user.user_name || user.user_username || '?').trim().spli
             <div>
                 <p class="eyebrow">Perfil</p>
                 <h1><%= user.user_username %></h1>
-                <p class="profile-meta"><%= user.user_name %> · <%= user.user_email %></p>
+                <p class="profile-meta"><%= user.user_name %><% if (isOwnProfile) { %> · <%= user.user_email %><% } %></p>
             </div>
+            <% if (isOwnProfile) { %>
             <div class="profile-actions">
-                <a class="btn btn-ghost btn-sm" href="/usuarios/<%= user.user_id %>/editar">Editar usuario</a>
+                <a class="btn btn-ghost btn-sm" href="/perfil/editar">Editar perfil</a>
             </div>
+            <% } %>
         </header>
 
         <section class="section" aria-labelledby="user-movies-heading">
             <h2 class="section-title" id="user-movies-heading">Películas <span class="count"><%= movies.length %></span></h2>
             <% if (movies.length === 0) { %>
-                <p class="empty">Este usuario todavía no calificó ninguna película.</p>
+                <p class="empty">Este usuario todavía no guardó películas ni valoraciones.</p>
             <% } else { %>
                 <ul class="row-list">
                     <% movies.forEach((movie) => { %>
@@ -34,6 +36,10 @@ const initials = String(user.user_name || user.user_username || '?').trim().spli
                             <span class="row-year"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : '—' %></span>
                             <div class="row-body">
                                 <a class="row-title" href="/pelicula/<%= movie.movie_id %>"><%= movie.title %></a>
+                                <div class="chips interaction-tags">
+                                    <% if (movie.is_favorite) { %><span class="chip chip-match">Favorita</span><% } %>
+                                    <% if (movie.watch_status) { %><span class="chip"><%= movie.watch_status === 'watched' ? 'Vista' : 'Quiero ver' %></span><% } %>
+                                </div>
                                 <% if (movie.rating) { %>
                                     <p class="row-detail">
                                         <strong>Puntuación:</strong>
@@ -43,6 +49,7 @@ const initials = String(user.user_name || user.user_username || '?').trim().spli
                                 <% if (movie.opinion) { %>
                                     <p class="quote">"<%= movie.opinion %>"</p>
                                 <% } %>
+                                <% if (isOwnProfile) { %><a class="interaction-edit" href="/pelicula/<%= movie.movie_id %>#rate-heading">Editar interacción →</a><% } %>
                             </div>
                         </li>
                     <% }); %>
@@ -50,7 +57,7 @@ const initials = String(user.user_name || user.user_username || '?').trim().spli
             <% } %>
         </section>
 
-        <a class="back-link" href="/usuarios">← Volver a usuarios</a>
+        <a class="back-link" href="<%= isOwnProfile ? '/' : '/usuarios' %>">← <%= isOwnProfile ? 'Volver al inicio' : 'Volver a usuarios' %></a>
     </div>
 </main>
 

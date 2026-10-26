@@ -8,20 +8,38 @@
 require('dotenv').config();
 
 const express = require('express');
+const bcrypt = require('bcryptjs');
+const session = require('express-session');
 
 const { Pool } = require('pg');
 const { getTmdbMovie, getTmdbPoster } = require('./tmdb');
 
 const app = express();
 const port = process.env.PORT || 3500;
+const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === 'production' ? null : 'movieweb-local-development-secret');
+
+if (!sessionSecret) throw new Error('SESSION_SECRET es obligatorio en producción.');
 
 const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
+const validId = (value) => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number(value) <= 2147483647;
 
 // Serve static files from the "views" directory
 app.use(express.static('views'));
 
 // Permite leer los datos enviados por formularios (req.body)
 app.use(express.urlencoded({ extended: false }));
+app.use(session({
+    name: 'movieweb.sid',
+    secret: sessionSecret,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+}));
 
 // Crear un "pool" de conexiones a PostgreSQL usando las variables de entorno
 const db = new Pool({
@@ -36,15 +54,62 @@ const db = new Pool({
 async function loadRatingUsers() {
     const tables = await db.query(`
         SELECT to_regclass('movies.users') IS NOT NULL AS users_available,
-               to_regclass('movies.movie_user') IS NOT NULL AS ratings_available
+               to_regclass('movies.movie_user') IS NOT NULL
+               AND (SELECT count(*) = 2 FROM information_schema.columns
+                    WHERE table_schema = 'movies' AND table_name = 'movie_user'
+                    AND column_name IN ('is_favorite', 'watch_status')) AS ratings_available
     `);
     const available = tables.rows[0].users_available && tables.rows[0].ratings_available;
 
-    if (!available) return { available: false, users: [] };
-
-    const result = await db.query('SELECT user_id, user_username FROM users ORDER BY user_username');
-    return { available: true, users: result.rows };
+    return { available, users: [] };
 }
+
+app.use(async (req, res, next) => {
+    res.locals.currentUser = null;
+    if (!req.session.userId) return next();
+
+    try {
+        const result = await db.query(
+            'SELECT user_id, user_username, user_name, user_email FROM users WHERE user_id = $1',
+            [req.session.userId]
+        );
+        if (result.rows.length === 0) {
+            req.session.userId = null;
+        } else {
+            res.locals.currentUser = result.rows[0];
+        }
+        next();
+    } catch (err) {
+        next(err);
+    }
+});
+
+const requireAuth = (req, res, next) => {
+    if (!res.locals.currentUser) return res.redirect('/login');
+    next();
+};
+
+const userValues = (body) => ({
+    user_username: String(body.user_username || '').trim(),
+    user_name: String(body.user_name || '').trim(),
+    user_email: String(body.user_email || '').trim().toLowerCase(),
+});
+
+const validateUserValues = (values) => {
+    if (!values.user_username || !values.user_name || !values.user_email) return 'Completá todos los datos del perfil.';
+    if (!/^[a-zA-Z0-9._-]{3,50}$/.test(values.user_username)) return 'El username debe tener entre 3 y 50 caracteres y usar letras, números, punto, guion o guion bajo.';
+    if (values.user_name.length > 100) return 'El nombre admite hasta 100 caracteres.';
+    if (values.user_email.length > 255 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.user_email)) return 'Ingresá un email válido.';
+    return null;
+};
+
+const validatePassword = (password) => {
+    if (password.length < 8) return 'La contraseña debe tener al menos 8 caracteres.';
+    if (password.length > 72 || bcrypt.truncates(password)) return 'La contraseña es demasiado larga.';
+    return null;
+};
+
+const canComparePassword = (password) => Boolean(password) && password.length <= 72 && !bcrypt.truncates(password);
 
 // Configurar el motor de plantillas EJS
 app.set('view engine', 'ejs');
@@ -178,6 +243,15 @@ app.get('/pelicula/:id', async (req, res) => {
         );
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
         const ratingUsers = await (app.locals.loadRatingUsers || loadRatingUsers)();
+        const selectedUser = ratingUsers.available ? res.locals.currentUser : null;
+        let interaction = null;
+        if (selectedUser) {
+            const result = await db.query(
+                'SELECT is_favorite, watch_status, rating, opinion FROM movie_user WHERE user_id = $1 AND movie_id = $2',
+                [selectedUser.user_id, movieId]
+            );
+            interaction = result.rows[0] || null;
+        }
 
         res.render('pelicula', {
             movie: movieResult.rows[0],
@@ -191,6 +265,8 @@ app.get('/pelicula/:id', async (req, res) => {
             tmdb,
             users: ratingUsers.users,
             ratingsAvailable: ratingUsers.available,
+            selectedUser,
+            interaction,
         });
     } catch (err) {
         console.error(err);
@@ -341,184 +417,86 @@ app.get('/keyword/resultados', async (req, res) => {
     }
 });
 
-// Ruta para listar todos los usuarios (PostgreSQL)
-app.get('/usuarios', async (req, res) => {
-    const usersQuery = `
-      SELECT user_id, user_username, user_name, user_email
-      FROM users
-      ORDER BY user_username ASC
-    `;
-
-    try {
-        const result = await db.query(usersQuery);
-
-        res.render('usuarios', {
-            users: result.rows,
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error al cargar los usuarios.');
-    }
+app.get('/registro', (req, res) => {
+    if (res.locals.currentUser) return res.redirect('/perfil');
+    res.render('registro', { error: null, values: { user_username: '', user_name: '', user_email: '' } });
 });
 
-// Muestra el formulario vacío para crear un usuario
-app.get('/usuarios/nuevo', (req, res) => {
-    res.render('usuario_form', {
-        title: 'Nuevo usuario',
-        action: '/usuarios/nuevo',
-        error: null,
-        values: { user_username: '', user_name: '', user_email: '' },
-    });
-});
-
-// Recibe el formulario y guarda el usuario (PostgreSQL)
-app.post('/usuarios/nuevo', async (req, res) => {
-    const values = {
-        user_username: String(req.body.user_username || '').trim(),
-        user_name: String(req.body.user_name || '').trim(),
-        user_email: String(req.body.user_email || '').trim(),
-    };
-
-    if (!values.user_username || !values.user_name || !values.user_email) {
-        return res.status(400).render('usuario_form', {
-            title: 'Nuevo usuario',
-            action: '/usuarios/nuevo',
-            error: 'Completá todos los campos.',
-            values,
-        });
+app.post('/registro', async (req, res) => {
+    if (res.locals.currentUser) return res.redirect('/perfil');
+    const values = userValues(req.body);
+    const password = String(req.body.password || '');
+    const passwordConfirmation = String(req.body.password_confirmation || '');
+    const options = { values };
+    const valuesError = validateUserValues(values);
+    if (valuesError || !password) return res.status(400).render('registro', { ...options, error: valuesError || 'Completá todos los campos.' });
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).render('registro', { ...options, error: passwordError });
+    if (password !== passwordConfirmation) {
+        return res.status(400).render('registro', { ...options, error: 'Las contraseñas no coinciden.' });
     }
-
-    const insertQuery = `
-      INSERT INTO users (user_username, user_name, user_email)
-      VALUES ($1, $2, $3)
-    `;
-
     try {
-        await db.query(insertQuery, [values.user_username, values.user_name, values.user_email]);
-        res.redirect('/usuarios');
+        const passwordHash = await bcrypt.hash(password, 10);
+        const result = await db.query(`INSERT INTO users (user_username, user_name, user_email, password_hash)
+            VALUES ($1, $2, $3, $4) RETURNING user_id`,
+            [values.user_username, values.user_name, values.user_email, passwordHash]);
+        req.session.regenerate((err) => {
+            if (err) return res.status(500).send('Error al iniciar la sesión.');
+            req.session.userId = result.rows[0].user_id;
+            res.redirect('/perfil');
+        });
     } catch (err) {
         if (err.code === '23505') {
-            return res.status(400).render('usuario_form', {
-                title: 'Nuevo usuario',
-                action: '/usuarios/nuevo',
-                error: 'Ya existe un usuario con ese username o email.',
-                values,
-            });
+            return res.status(400).render('registro', { ...options, error: 'Ya existe un usuario con ese username o email.' });
         }
         console.error(err);
         res.status(500).send('Error al crear el usuario.');
     }
 });
 
-// Muestra el formulario con los datos actuales del usuario
-app.get('/usuarios/:id/editar', async (req, res) => {
-    const userId = Number(req.params.id);
+app.get('/login', (req, res) => {
+    if (res.locals.currentUser) return res.redirect('/perfil');
+    res.render('login', { error: null, identifier: '' });
+});
 
-    if (!Number.isInteger(userId) || userId <= 0) {
-        return res.status(400).send('ID de usuario inválido.');
+app.post('/login', async (req, res) => {
+    if (res.locals.currentUser) return res.redirect('/perfil');
+    const identifier = String(req.body.identifier || '').trim();
+    const password = String(req.body.password || '');
+    if (!identifier || identifier.length > 255 || !canComparePassword(password)) {
+        return res.status(401).render('login', { error: 'Usuario o contraseña incorrectos.', identifier: identifier.slice(0, 255) });
     }
-
     try {
-        const result = await db.query(
-            'SELECT user_username, user_name, user_email FROM users WHERE user_id = $1',
-            [userId]
-        );
-
-        if (result.rows.length === 0) {
-            return res.status(404).send('Usuario no encontrado.');
+        const result = await db.query(`SELECT user_id, password_hash FROM users
+            WHERE LOWER(user_username) = LOWER($1) OR LOWER(user_email) = LOWER($1) LIMIT 1`, [identifier]);
+        const user = result.rows[0];
+        if (!user?.password_hash || !(await bcrypt.compare(password, user.password_hash))) {
+            return res.status(401).render('login', { error: 'Usuario o contraseña incorrectos.', identifier });
         }
-
-        res.render('usuario_form', {
-            title: 'Editar usuario',
-            action: `/usuarios/${userId}/editar`,
-            error: null,
-            values: result.rows[0],
+        req.session.regenerate((err) => {
+            if (err) return res.status(500).send('Error al iniciar la sesión.');
+            req.session.userId = user.user_id;
+            res.redirect('/perfil');
         });
     } catch (err) {
         console.error(err);
-        res.status(500).send('Error al cargar el usuario.');
+        res.status(500).send('Error al iniciar la sesión.');
     }
 });
 
-// Recibe el formulario y actualiza el usuario (PostgreSQL)
-app.post('/usuarios/:id/editar', async (req, res) => {
-    const userId = Number(req.params.id);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-        return res.status(400).send('ID de usuario inválido.');
-    }
-
-    const values = {
-        user_username: String(req.body.user_username || '').trim(),
-        user_name: String(req.body.user_name || '').trim(),
-        user_email: String(req.body.user_email || '').trim(),
-    };
-    const formOptions = { title: 'Editar usuario', action: `/usuarios/${userId}/editar`, values };
-
-    if (!values.user_username || !values.user_name || !values.user_email) {
-        return res.status(400).render('usuario_form', { ...formOptions, error: 'Completá todos los campos.' });
-    }
-
-    const updateQuery = `
-      UPDATE users
-      SET user_username = $1, user_name = $2, user_email = $3
-      WHERE user_id = $4
-    `;
-
-    try {
-        const result = await db.query(updateQuery, [values.user_username, values.user_name, values.user_email, userId]);
-
-        if (result.rowCount === 0) {
-            return res.status(404).send('Usuario no encontrado.');
-        }
-
-        res.redirect('/usuarios');
-    } catch (err) {
-        if (err.code === '23505') {
-            return res.status(400).render('usuario_form', {
-                ...formOptions,
-                error: 'Ya existe un usuario con ese username o email.',
-            });
-        }
-        console.error(err);
-        res.status(500).send('Error al actualizar el usuario.');
-    }
+app.post('/logout', requireAuth, (req, res) => {
+    req.session.destroy((err) => {
+        if (err) return res.status(500).send('Error al cerrar la sesión.');
+        res.clearCookie('movieweb.sid');
+        res.redirect('/');
+    });
 });
 
-// Borra un usuario (y por CASCADE, sus películas en movie_user)
-app.post('/usuarios/:id/eliminar', async (req, res) => {
-    const userId = Number(req.params.id);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-        return res.status(400).send('ID de usuario inválido.');
-    }
-
-    try {
-        await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
-        res.redirect('/usuarios');
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error al eliminar el usuario.');
-    }
-});
-
-// Perfil de un usuario con sus películas, puntuación y opinión (PostgreSQL)
-app.get('/usuarios/:id', async (req, res) => {
-    const userId = Number(req.params.id);
-
-    if (!Number.isInteger(userId) || userId <= 0) {
-        return res.status(400).send('ID de usuario inválido.');
-    }
-
-    const userQuery = `
-      SELECT user_id, user_username, user_name, user_email
-      FROM users
-      WHERE user_id = $1
-    `;
-
+const renderUserProfile = async (res, user, isOwnProfile) => {
+    const userId = user.user_id;
     const moviesQuery = `
       SELECT movie.movie_id, movie.title, movie.release_date,
-             movie_user.rating, movie_user.opinion
+             movie_user.rating, movie_user.opinion, movie_user.is_favorite, movie_user.watch_status
       FROM movie_user
       INNER JOIN movie ON movie.movie_id = movie_user.movie_id
       WHERE movie_user.user_id = $1
@@ -526,38 +504,141 @@ app.get('/usuarios/:id', async (req, res) => {
     `;
 
     try {
-        const [userResult, moviesResult] = await Promise.all([
-            db.query(userQuery, [userId]),
-            db.query(moviesQuery, [userId]),
-        ]);
+        const moviesResult = await db.query(moviesQuery, [userId]);
+        res.render('usuario', { user, movies: moviesResult.rows, isOwnProfile });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar el perfil del usuario.');
+    }
+};
 
-        if (userResult.rows.length === 0) {
-            return res.status(404).send('Usuario no encontrado.');
+app.get('/perfil', requireAuth, async (req, res) => {
+    await renderUserProfile(res, res.locals.currentUser, true);
+});
+
+app.get('/perfil/editar', requireAuth, (req, res) => {
+    res.render('perfil_editar', { error: null, success: null, values: res.locals.currentUser });
+});
+
+app.post('/perfil/editar', requireAuth, async (req, res) => {
+    const values = userValues(req.body);
+    const options = { values, success: null };
+    const valuesError = validateUserValues(values);
+    if (valuesError) return res.status(400).render('perfil_editar', { ...options, error: valuesError });
+    try {
+        await db.query(`UPDATE users SET user_username = $1, user_name = $2, user_email = $3 WHERE user_id = $4`,
+            [values.user_username, values.user_name, values.user_email, res.locals.currentUser.user_id]);
+        res.locals.currentUser = { ...res.locals.currentUser, ...values };
+        res.render('perfil_editar', { values, error: null, success: 'Tus datos se actualizaron.' });
+    } catch (err) {
+        if (err.code === '23505') {
+            return res.status(400).render('perfil_editar', { ...options, error: 'Ya existe un usuario con ese username o email.' });
         }
+        console.error(err);
+        res.status(500).send('Error al actualizar el perfil.');
+    }
+});
 
-        res.render('usuario', {
-            user: userResult.rows[0],
-            movies: moviesResult.rows,
+app.post('/perfil/password', requireAuth, async (req, res) => {
+    const currentPassword = String(req.body.current_password || '');
+    const newPassword = String(req.body.new_password || '');
+    const confirmation = String(req.body.password_confirmation || '');
+    try {
+        const result = await db.query('SELECT password_hash FROM users WHERE user_id = $1', [res.locals.currentUser.user_id]);
+        if (!canComparePassword(currentPassword) || !result.rows[0]?.password_hash ||
+            !(await bcrypt.compare(currentPassword, result.rows[0].password_hash))) {
+            return res.status(400).render('perfil_editar', { error: 'La contraseña actual es incorrecta.', success: null, values: res.locals.currentUser });
+        }
+        const passwordError = validatePassword(newPassword);
+        if (passwordError || newPassword !== confirmation) {
+            return res.status(400).render('perfil_editar', { error: passwordError || 'Las contraseñas no coinciden.', success: null, values: res.locals.currentUser });
+        }
+        await db.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [await bcrypt.hash(newPassword, 10), res.locals.currentUser.user_id]);
+        res.render('perfil_editar', { error: null, success: 'Tu contraseña se actualizó.', values: res.locals.currentUser });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al actualizar la contraseña.');
+    }
+});
+
+app.post('/perfil/eliminar', requireAuth, async (req, res) => {
+    const password = String(req.body.password || '');
+    try {
+        const result = await db.query('SELECT password_hash FROM users WHERE user_id = $1', [res.locals.currentUser.user_id]);
+        if (!canComparePassword(password) || !result.rows[0]?.password_hash ||
+            !(await bcrypt.compare(password, result.rows[0].password_hash))) {
+            return res.status(400).render('perfil_editar', { error: 'Ingresá tu contraseña para eliminar la cuenta.', success: null, values: res.locals.currentUser });
+        }
+        await db.query('DELETE FROM users WHERE user_id = $1', [res.locals.currentUser.user_id]);
+        req.session.destroy(() => {
+            res.clearCookie('movieweb.sid');
+            res.redirect('/');
         });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al eliminar la cuenta.');
+    }
+});
+
+app.get('/usuarios', async (req, res) => {
+    try {
+        const result = await db.query('SELECT user_id, user_username, user_name FROM users ORDER BY user_username');
+        res.render('usuarios', { users: result.rows });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar los usuarios.');
+    }
+});
+
+app.get('/usuarios/nuevo', (req, res) => res.redirect('/registro'));
+
+app.get('/usuarios/:id', async (req, res) => {
+    if (!validId(req.params.id)) return res.status(400).send('ID de usuario inválido.');
+    try {
+        const result = await db.query('SELECT user_id, user_username, user_name FROM users WHERE user_id = $1', [Number(req.params.id)]);
+        if (result.rows.length === 0) return res.status(404).send('Usuario no encontrado.');
+        const isOwnProfile = res.locals.currentUser?.user_id === result.rows[0].user_id;
+        await renderUserProfile(res, isOwnProfile ? res.locals.currentUser : result.rows[0], isOwnProfile);
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar el perfil del usuario.');
     }
 });
 
-// Guarda (o actualiza) la calificación de un usuario para una película (PostgreSQL)
-app.post('/pelicula/:id/calificar', async (req, res) => {
+app.get('/usuarios/:id/editar', requireAuth, (req, res) => {
+    if (!validId(req.params.id)) return res.status(400).send('ID de usuario inválido.');
+    if (Number(req.params.id) !== res.locals.currentUser.user_id) return res.status(403).send('No podés editar otro usuario.');
+    res.redirect('/perfil/editar');
+});
+
+app.post('/usuarios/:id/eliminar', (req, res) => res.status(404).send('Ruta no disponible.'));
+
+// Guarda la interacción completa o solamente la valoración del endpoint anterior.
+app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, async (req, res) => {
+    const legacy = req.path.endsWith('/calificar');
     const movieId = Number(req.params.id);
-    const userId = Number(req.body.user_id);
-    const ratingText = String(req.body.rating || '').trim();
-    const opinion = String(req.body.opinion || '').trim() || null;
+    const userId = res.locals.currentUser.user_id;
+    if (!validId(req.params.id)) {
+        return res.status(400).send('Película inválida.');
+    }
+    if (['rating', 'opinion', 'watch_status', 'is_favorite', 'action'].some((key) =>
+        req.body[key] !== undefined && typeof req.body[key] !== 'string')) {
+        return res.status(400).send('Datos de interacción inválidos.');
+    }
+    const ratingText = (req.body.rating || '').trim();
+    const opinion = (req.body.opinion || '').trim() || null;
+    const watchStatus = req.body.watch_status || null;
+    const favorite = req.body.is_favorite === 'on';
+    const remove = !legacy && req.body.action === 'remove';
+    if (!legacy && (!['save', 'remove', undefined].includes(req.body.action) ||
+        ![null, 'want_to_watch', 'watched'].includes(watchStatus) ||
+        ![undefined, 'on'].includes(req.body.is_favorite))) {
+        return res.status(400).send('Estado de interacción inválido.');
+    }
+    if (opinion && opinion.length > 1000) return res.status(400).send('La opinión admite hasta 1000 caracteres.');
     const rating = ratingText === '' ? null : Number(ratingText);
 
-    if (!Number.isInteger(movieId) || movieId <= 0 || !Number.isInteger(userId) || userId <= 0) {
-        return res.status(400).send('Película o usuario inválido.');
-    }
-
-    if (rating !== null && (!Number.isInteger(rating) || rating < 1 || rating > 5)) {
+    if (rating !== null && !/^[1-5]$/.test(ratingText)) {
         return res.status(400).send('La puntuación debe ser un número del 1 al 5.');
     }
 
@@ -569,9 +650,28 @@ app.post('/pelicula/:id/calificar', async (req, res) => {
     `;
 
     try {
-        await db.query(upsertQuery, [userId, movieId, rating, opinion]);
-        res.redirect(`/usuarios/${userId}`);
+        const exists = await db.query(`SELECT EXISTS(SELECT 1 FROM users WHERE user_id = $1) AS valid_user,
+            EXISTS(SELECT 1 FROM movie WHERE movie_id = $2) AS valid_movie`, [userId, movieId]);
+        if (!exists.rows[0].valid_user || !exists.rows[0].valid_movie) {
+            return res.status(400).send('El usuario o la película no existen.');
+        }
+        if (legacy) {
+            await db.query(upsertQuery, [userId, movieId, rating, opinion]);
+        } else if (remove || (!favorite && !watchStatus && rating === null && !opinion)) {
+            await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2', [userId, movieId]);
+        } else {
+            await db.query(`INSERT INTO movie_user (user_id, movie_id, rating, opinion, is_favorite, watch_status)
+                VALUES ($1, $2, $3, $4, $5, $6)
+                ON CONFLICT (user_id, movie_id) DO UPDATE SET
+                rating = EXCLUDED.rating, opinion = EXCLUDED.opinion,
+                is_favorite = EXCLUDED.is_favorite, watch_status = EXCLUDED.watch_status`,
+                [userId, movieId, rating, opinion, favorite, watchStatus]);
+        }
+        res.redirect(`/pelicula/${movieId}#rate-heading`);
     } catch (err) {
+        if (err.code === '42P01' || err.code === '42703') {
+            return res.status(503).send('Las interacciones no están disponibles temporalmente.');
+        }
         if (err.code === '23503') {
             return res.status(400).send('El usuario o la película no existen.');
         }

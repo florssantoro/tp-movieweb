@@ -63,6 +63,6 @@ test('movie template explains when ratings tables are unavailable', async () => 
         tmdb: null, users: [], ratingsAvailable: false,
     });
 
-    assert.match(body, /Las calificaciones no están disponibles/);
-    assert.doesNotMatch(body, /action="\/pelicula\/1\/calificar"/);
+    assert.match(body, /Las interacciones no están disponibles/);
+    assert.doesNotMatch(body, /action="\/pelicula\/1\/interaccion"/);
 });
