@@ -20,7 +20,7 @@ test('movie template handles absent dates, metadata, credits and TMDB data', asy
             movie_status: null,
         },
         cast: [], crew: [], genres: [], countries: [], languages: [], companies: [], keywords: [],
-        tmdb: null, users: [],
+        tmdb: null, users: [], ratingsAvailable: true,
     });
 
     assert.match(body, /Película sin datos/);
@@ -44,7 +44,8 @@ test('movie template progressively reveals cast and groups crew by department', 
             { person_name: 'Camarógrafa', job: 'Camera Operator', department_name: 'Camera' },
             { person_name: 'Compositor', job: 'Original Music Composer', department_name: 'Sound' },
         ],
-        genres: [], countries: [], languages: [], companies: [], keywords: [], tmdb: null, users: [],
+        genres: [], countries: [], languages: [], companies: [], keywords: [], tmdb: null,
+        users: [], ratingsAvailable: true,
     });
 
     assert.match(body, /Ver elenco completo \(13\)/);
@@ -53,4 +54,15 @@ test('movie template progressively reveals cast and groups crew by department', 
     assert.equal((body.match(/href="\/actor\//g) || []).length, 13);
     assert.match(body, /Camera[\s\S]*Camarógrafa/);
     assert.match(body, /Sound[\s\S]*Compositor/);
+});
+
+test('movie template explains when ratings tables are unavailable', async () => {
+    const body = await ejs.renderFile(path.join(__dirname, '../views/pelicula.ejs'), {
+        movie: { movie_id: 1, title: 'Película', release_date: null, overview: null },
+        cast: [], crew: [], genres: [], countries: [], languages: [], companies: [], keywords: [],
+        tmdb: null, users: [], ratingsAvailable: false,
+    });
+
+    assert.match(body, /Las calificaciones no están disponibles/);
+    assert.doesNotMatch(body, /action="\/pelicula\/1\/calificar"/);
 });
