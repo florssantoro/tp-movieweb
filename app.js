@@ -33,6 +33,19 @@ const db = new Pool({
     options: `-c search_path=movies,public`, //modificar options de acuerdo al nombre del esquema
 });
 
+async function loadRatingUsers() {
+    const tables = await db.query(`
+        SELECT to_regclass('movies.users') IS NOT NULL AS users_available,
+               to_regclass('movies.movie_user') IS NOT NULL AS ratings_available
+    `);
+    const available = tables.rows[0].users_available && tables.rows[0].ratings_available;
+
+    if (!available) return { available: false, users: [] };
+
+    const result = await db.query('SELECT user_id, user_username FROM users ORDER BY user_username');
+    return { available: true, users: result.rows };
+}
+
 // Configurar el motor de plantillas EJS
 app.set('view engine', 'ejs');
 
@@ -164,7 +177,7 @@ app.get('/pelicula/:id', async (req, res) => {
             queries.map((query) => db.query(query, [movieId]))
         );
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
-         const usersResult = await db.query('SELECT user_id, user_username FROM users ORDER BY user_username');
+        const ratingUsers = await (app.locals.loadRatingUsers || loadRatingUsers)();
 
         res.render('pelicula', {
             movie: movieResult.rows[0],
@@ -176,7 +189,8 @@ app.get('/pelicula/:id', async (req, res) => {
             companies: companies.rows,
             keywords: keywords.rows,
             tmdb,
-            users: usersResult.rows,
+            users: ratingUsers.users,
+            ratingsAvailable: ratingUsers.available,
         });
     } catch (err) {
         console.error(err);

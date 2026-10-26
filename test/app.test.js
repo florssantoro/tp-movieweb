@@ -22,6 +22,7 @@ after(async () => {
 afterEach(() => {
     delete app.locals.loadTmdbMovie;
     delete app.locals.loadTmdbPoster;
+    delete app.locals.loadRatingUsers;
 });
 
 test('empty search shows guidance without result sections', async () => {
@@ -204,4 +205,104 @@ test('poster route redirects to TMDB and handles missing or invalid posters', as
 
     const invalid = await fetch(`${baseUrl}/poster/abc`, { redirect: 'manual' });
     assert.equal(invalid.status, 400);
+});
+
+test('movie detail remains available when user tables are unavailable', async () => {
+    app.locals.loadTmdbMovie = async () => null;
+    app.locals.loadRatingUsers = async () => ({ available: false, users: [] });
+
+    const response = await fetch(`${baseUrl}/pelicula/238`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, /Las calificaciones no están disponibles/);
+    assert.doesNotMatch(body, /action="\/pelicula\/238\/calificar"/);
+});
+
+test('users can be created, viewed, edited and deleted', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const username = `test-${suffix}`.slice(0, 50);
+    const email = `${suffix}@example.com`;
+    let userId;
+
+    try {
+        const created = await fetch(`${baseUrl}/usuarios/nuevo`, {
+            method: 'POST',
+            redirect: 'manual',
+            body: new URLSearchParams({ user_username: username, user_name: 'Usuario Test', user_email: email }),
+        });
+        assert.equal(created.status, 302);
+        assert.equal(created.headers.get('location'), '/usuarios');
+
+        const saved = await db.query('SELECT user_id FROM users WHERE user_username = $1', [username]);
+        assert.equal(saved.rows.length, 1);
+        userId = saved.rows[0].user_id;
+
+        const profile = await fetch(`${baseUrl}/usuarios/${userId}`);
+        assert.equal(profile.status, 200);
+        assert.match(await profile.text(), /Usuario Test/);
+
+        const edited = await fetch(`${baseUrl}/usuarios/${userId}/editar`, {
+            method: 'POST',
+            redirect: 'manual',
+            body: new URLSearchParams({ user_username: username, user_name: 'Usuario Editado', user_email: email }),
+        });
+        assert.equal(edited.status, 302);
+
+        const updated = await db.query('SELECT user_name FROM users WHERE user_id = $1', [userId]);
+        assert.equal(updated.rows[0].user_name, 'Usuario Editado');
+
+        const deleted = await fetch(`${baseUrl}/usuarios/${userId}/eliminar`, { method: 'POST', redirect: 'manual' });
+        assert.equal(deleted.status, 302);
+        const remaining = await db.query('SELECT 1 FROM users WHERE user_id = $1', [userId]);
+        assert.equal(remaining.rows.length, 0);
+        userId = undefined;
+    } finally {
+        if (userId) await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+    }
+});
+
+test('ratings and opinions are persisted and shown on the user profile', async () => {
+    const suffix = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const username = `rating-${suffix}`.slice(0, 50);
+    const opinion = `Opinión de prueba ${suffix}`;
+    const user = await db.query(
+        'INSERT INTO users (user_username, user_name, user_email) VALUES ($1, $2, $3) RETURNING user_id',
+        [username, 'Usuario Rating', `${suffix}@example.com`]
+    );
+    const userId = user.rows[0].user_id;
+
+    try {
+        const response = await fetch(`${baseUrl}/pelicula/238/calificar`, {
+            method: 'POST',
+            redirect: 'manual',
+            body: new URLSearchParams({ user_id: String(userId), rating: '4', opinion }),
+        });
+        assert.equal(response.status, 302);
+        assert.equal(response.headers.get('location'), `/usuarios/${userId}`);
+
+        const saved = await db.query(
+            'SELECT rating, opinion FROM movie_user WHERE user_id = $1 AND movie_id = $2',
+            [userId, 238]
+        );
+        assert.deepEqual(saved.rows[0], { rating: 4, opinion });
+
+        const profile = await fetch(`${baseUrl}/usuarios/${userId}`);
+        const body = await profile.text();
+        assert.equal(profile.status, 200);
+        assert.match(body, /aria-label="4 de 5"/);
+        assert.ok(body.includes(opinion));
+    } finally {
+        await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+    }
+});
+
+test('rating route rejects values outside the supported range', async () => {
+    const response = await fetch(`${baseUrl}/pelicula/238/calificar`, {
+        method: 'POST',
+        body: new URLSearchParams({ user_id: '1', rating: '6', opinion: '' }),
+    });
+
+    assert.equal(response.status, 400);
+    assert.match(await response.text(), /número del 1 al 5/);
 });

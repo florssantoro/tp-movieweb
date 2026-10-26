@@ -144,7 +144,9 @@ const primaryOverview = tmdb?.overview || movie.overview;
     
     <section class="movie-section" aria-labelledby="rate-heading">
         <h2 id="rate-heading">Calificar esta película</h2>
-        <% if (users.length === 0) { %>
+        <% if (!ratingsAvailable) { %>
+            <p class="movie-muted">Las calificaciones no están disponibles hasta configurar las tablas de usuarios.</p>
+        <% } else if (users.length === 0) { %>
             <p class="movie-muted">No hay usuarios. <a href="/usuarios/nuevo">Creá uno</a> para poder calificar.</p>
         <% } else { %>
             <form class="form-card movie-rate" action="/pelicula/<%= movie.movie_id %>/calificar" method="POST">
