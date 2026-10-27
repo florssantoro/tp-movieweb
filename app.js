@@ -115,9 +115,7 @@ const canComparePassword = (password) => Boolean(password) && password.length <=
 app.set('view engine', 'ejs');
 
 // Ruta para la página de inicio
-app.get('/', (req, res) => {
-    res.render('index');
-});
+require('./discovery').registerDiscovery(app, db, requireAuth);
 
 // Ruta para buscar películas en la base de datos PostgreSQL
 app.get('/buscar', async (req, res) => {
@@ -203,6 +201,12 @@ app.get('/pelicula/:id', async (req, res) => {
     try {
         const movieResult = await db.query('SELECT * FROM movie WHERE movie_id = $1', [movieId]);
         if (movieResult.rows.length === 0) {
+            const remote = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
+            if (remote?.movie) {
+                return res.render('pelicula', { movie: remote.movie, tmdb: remote, genres: remote.genres || [],
+                    cast: [], crew: [], countries: [], languages: [], companies: [], keywords: [], users: [],
+                    ratingsAvailable: (await loadRatingUsers()).available, selectedUser: res.locals.currentUser, interaction: null });
+            }
             return res.status(404).send('Película no encontrada.');
         }
 
@@ -254,10 +258,11 @@ app.get('/pelicula/:id', async (req, res) => {
         }
 
         res.render('pelicula', {
-            movie: movieResult.rows[0],
+            movie: Object.fromEntries(Object.entries({ ...tmdb?.movie, ...movieResult.rows[0] }).map(([key, value]) =>
+                [key, value ?? tmdb?.movie?.[key] ?? null])),
             cast: cast.rows,
             crew: crew.rows,
-            genres: genres.rows,
+            genres: genres.rows.length ? genres.rows : tmdb?.genres || [],
             countries: countries.rows,
             languages: languages.rows,
             companies: companies.rows,
@@ -650,6 +655,14 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
     `;
 
     try {
+        if (!remove && (legacy || favorite || watchStatus || rating !== null || opinion) &&
+            !(await db.query('SELECT 1 FROM movie WHERE movie_id = $1', [movieId])).rowCount) {
+            const remote = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
+            if (!remote?.movie) return res.status(400).send('La película no está disponible.');
+            // Persist only when the signed-in user saves it, so the existing FK remains valid.
+            await db.query('INSERT INTO movie (movie_id, title, release_date) VALUES ($1, $2, $3) ON CONFLICT (movie_id) DO NOTHING',
+                [movieId, remote.movie.title.slice(0, 1000), /^\d{4}-\d{2}-\d{2}$/.test(remote.movie.release_date || '') ? remote.movie.release_date : null]);
+        }
         const exists = await db.query(`SELECT EXISTS(SELECT 1 FROM users WHERE user_id = $1) AS valid_user,
             EXISTS(SELECT 1 FROM movie WHERE movie_id = $2) AS valid_movie`, [userId, movieId]);
         if (!exists.rows[0].valid_user || !exists.rows[0].valid_movie) {

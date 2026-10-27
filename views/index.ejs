@@ -1,30 +1,39 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-<%- include('partials/head', { pageTitle: 'Inicio' }) %>
-</head>
+<head><%- include('partials/head', { pageTitle: 'Descubrí tu próxima película' }) %><script src="/discovery-ui.js" defer></script></head>
 <body>
-<%- include('partials/header', { showSearch: false }) %>
-
-<main class="hero">
-    <div class="hero-inner">
-        <h1>Películas, actores y directores.</h1>
-        <p class="hero-lead">Buscá en una base de miles de películas y descubrí quién actuó, quién dirigió y de qué se trata cada una.</p>
-
-        <form class="big-search" action="/buscar" method="GET" role="search">
-            <input class="input" type="search" name="q" placeholder="Buscar películas, actores o directores..." aria-label="Buscar películas, actores o directores" required autofocus>
-            <button class="btn" type="submit">Buscar</button>
-        </form>
-
-        <p class="hero-links">¿Buscás un tema? <a href="/keyword">Buscar por palabra clave</a></p>
-        <div class="chips chips-center">
-            <% ['time travel', 'prison', 'dystopia', 'heist', 'space'].forEach((keyword) => { %>
-                <a class="chip" href="/keyword/resultados?q=<%= encodeURIComponent(keyword) %>"><%= keyword %></a>
-            <% }); %>
+<%- include('partials/header') %>
+<main class="discovery container" id="main">
+    <header class="discovery-intro"><p class="eyebrow">TU PRÓXIMA GRAN HISTORIA</p><h1>¿Qué vas a ver hoy?</h1><p>Descubrí algo que te atrape. Guardalo para después.</p></header>
+    <section class="trending" aria-labelledby="trending-heading" aria-roledescription="carrusel">
+        <div class="discovery-heading"><div><p class="eyebrow">EN CONVERSACIÓN</p><h2 id="trending-heading">Tendencias de la semana</h2></div><div class="carousel-controls" hidden aria-label="Controles de tendencias">
+            <button type="button" data-prev aria-label="Película anterior" title="Película anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+            <button type="button" data-pause aria-label="Pausar rotación automática" aria-pressed="false" title="Pausar rotación automática"><svg data-icon-pause viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><svg data-icon-play viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m9 6 9 6-9 6Z"/></svg></button>
+            <button type="button" data-next aria-label="Película siguiente" title="Película siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+        </div></div>
+        <% if (trending.length) { %>
+        <div class="trailer-track" tabindex="0" aria-label="Películas en tendencia">
+            <% trending.forEach((movie, index) => { %>
+            <article class="trailer-slide" aria-label="<%= index + 1 %> de <%= trending.length %>">
+                <% if (movie.backdropUrl || movie.posterUrl) { %><img class="trailer-backdrop" src="<%= movie.backdropUrl || movie.posterUrl %>" alt="" width="1280" height="720" <%- index ? 'loading="lazy"' : 'fetchpriority="high"' %>><% } %>
+                <div class="trailer-copy"><p class="eyebrow">TENDENCIA <%= String(index + 1).padStart(2,'0') %> / <%= String(trending.length).padStart(2,'0') %></p><h3><%= movie.title %></h3><p class="trailer-overview"><%= movie.overview || 'Una nueva historia para descubrir.' %></p>
+                    <div class="form-actions">
+                        <% if (movie.trailerEmbedUrl) { %><a class="btn" data-play="<%= movie.trailerEmbedUrl %>" href="<%= movie.trailerUrl %>" target="_blank" rel="noopener noreferrer">Ver tráiler <span aria-hidden="true">▶</span></a><% } else { %><span class="muted">Tráiler no disponible</span><% } %>
+                        <a class="btn btn-ghost" href="/pelicula/<%= movie.movie_id %>">Ver película</a>
+                    </div>
+                </div>
+            </article><% }); %>
         </div>
-    </div>
+        <p class="feed-credit">Tendencias en TMDB · Deslizá para explorar</p>
+        <% } else { %><div class="discovery-empty"><h3>Las tendencias vuelven pronto.</h3><p>Mientras tanto, explorá las mejores historias de nuestro catálogo.</p><a href="#top-rated">Ver mejor puntuadas ↓</a></div><% } %>
+    </section>
+    <section class="discovery-section suggestion-banner"><div><p class="eyebrow">MENOS BUSCAR. MÁS CINE.</p><h2>No sabés qué ver.</h2><p>Elegí un género o algo corto. Nosotros te acercamos las opciones.</p></div><a class="btn" href="/que-ver">Encontrá tu película →</a></section>
+    <% if (picks.length && locals.currentUser) { %><section class="discovery-section"><div class="discovery-heading"><div><p class="eyebrow">TU SELECCIÓN</p><h2>Para vos, <%= currentUser.user_username %></h2><p class="muted">Priorizamos tus géneros favoritos y dejamos afuera las que ya viste.</p></div><a href="/que-ver">Ver sugerencias →</a></div><%- include('partials/movie_cards', { movies: picks }) %></section><% } %>
+    <section class="discovery-section" id="genres"><div class="discovery-heading"><div><p class="eyebrow">SEGUÍ TU CURIOSIDAD</p><h2>Un género para cada momento</h2></div></div><div class="genre-grid"><% genres.forEach((g, i) => { %><a class="genre-link" href="/explorar?genero=<%= g.id %>"><span class="genre-number"><%= String(i+1).padStart(2,'0') %></span><h3><%= g.name %> <span aria-hidden="true">↗</span></h3><p><%= g.description %></p></a><% }); %></div></section>
+    <section class="discovery-section" id="top-rated"><div class="discovery-heading"><div><p class="eyebrow">HISTORIAS QUE DEJAN HUELLA</p><h2>Mejor puntuadas</h2><p class="muted">En nuestro catálogo · Al menos 200 votos · Puntuación sobre 10</p></div><a href="/explorar">Ver todas →</a></div><%- include('partials/movie_cards', { movies: top }) %></section>
+    <section class="discovery-section list-callout"><div><h2>Tu próxima película, a mano.</h2><p>Reuní las que querés ver, tus favoritas y las que ya viste.</p></div><a class="btn btn-ghost" href="/mi-lista">Ir a mi lista →</a></section>
+    <p class="feed-credit">Datos e imágenes de <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a>.</p>
 </main>
-
+<dialog class="trailer-dialog" aria-label="Reproducir tráiler"><button type="button" data-close class="btn btn-ghost">Cerrar tráiler ×</button><div class="trailer-player"></div><p><a data-youtube href="https://www.youtube.com" target="_blank" rel="noopener noreferrer">Si no se reproduce, abrir en YouTube ↗</a></p></dialog>
 <%- include('partials/footer') %>
-</body>
-</html>
+</body></html>
