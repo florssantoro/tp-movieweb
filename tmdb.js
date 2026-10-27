@@ -44,6 +44,12 @@ async function getTmdbMovie(movieId, { apiKey = process.env.TMDB_API_KEY, fetchI
         }
 
         return {
+            movie: details.id === movieId && typeof details.title === 'string' ? {
+                movie_id: movieId, title: details.title, release_date: details.release_date || null,
+                runtime: details.runtime, tagline: details.tagline, movie_status: details.status,
+                vote_average: details.vote_average, vote_count: details.vote_count,
+            } : null,
+            genres: (details.genres || []).map((g) => ({ genre_name: g.name })),
             overview: details.overview?.trim() || null,
             posterUrl: buildPosterUrl(details.poster_path, 'w500'),
             trailerUrl: trailer ? `https://www.youtube.com/watch?v=${trailer.key}` : null,
@@ -83,4 +89,4 @@ async function getTmdbPoster(movieId, { apiKey = process.env.TMDB_API_KEY, fetch
     }
 }
 
-module.exports = { getTmdbMovie, getTmdbPoster };
+module.exports = { getTmdbMovie, getTmdbPoster, buildPosterUrl };
