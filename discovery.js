@@ -46,7 +46,55 @@ const genres = [
     { id: 28, name: 'Acción', description: 'Sin un minuto de respiro.' },
     { id: 878, name: 'Ciencia ficción', description: 'Más allá de lo imaginable.' },
     { id: 16, name: 'Animación', description: 'Otros mundos, grandes historias.' },
+    { id: 12, name: 'Aventura', description: 'Historias para salir de lo conocido.' },
+    { id: 80, name: 'Crimen', description: 'Casos, secretos y decisiones al límite.' },
+    { id: 99, name: 'Documental', description: 'Historias reales para mirar de cerca.' },
+    { id: 10751, name: 'Familia', description: 'Para compartir en cualquier edad.' },
+    { id: 14, name: 'Fantasía', description: 'Mundos donde todo puede pasar.' },
+    { id: 10769, name: 'Cine extranjero', description: 'Otras miradas, otros lugares.' },
+    { id: 36, name: 'Historia', description: 'El pasado vuelve a escena.' },
+    { id: 10402, name: 'Música', description: 'Ritmo, escenarios y grandes voces.' },
+    { id: 9648, name: 'Misterio', description: 'Nada es exactamente lo que parece.' },
+    { id: 10749, name: 'Romance', description: 'Encuentros que cambian una historia.' },
+    { id: 10770, name: 'Película de TV', description: 'Historias hechas para la pantalla chica.' },
+    { id: 53, name: 'Thriller', description: 'Tensión que no te deja respirar.' },
+    { id: 10752, name: 'Bélica', description: 'Conflictos que marcaron generaciones.' },
+    { id: 37, name: 'Western', description: 'Fronteras, polvo y ley.' },
 ];
+
+function selectUniqueGenreFeatures(rows) {
+    const candidatesByGenre = new Map();
+    for (const row of rows) {
+        if (!candidatesByGenre.has(row.genre_id)) candidatesByGenre.set(row.genre_id, []);
+        candidatesByGenre.get(row.genre_id).push(row);
+    }
+    for (const candidates of candidatesByGenre.values()) {
+        candidates.sort((a, b) => Number(a.position) - Number(b.position));
+    }
+
+    const featureByGenre = new Map();
+    const genreByMovie = new Map();
+    function assign(genreId, visitedMovies, visitedGenres) {
+        if (visitedGenres.has(genreId)) return false;
+        visitedGenres.add(genreId);
+        for (const candidate of candidatesByGenre.get(genreId) || []) {
+            if (visitedMovies.has(candidate.movie_id)) continue;
+            visitedMovies.add(candidate.movie_id);
+            const currentGenre = genreByMovie.get(candidate.movie_id);
+            if (currentGenre === undefined || assign(currentGenre, visitedMovies, visitedGenres)) {
+                genreByMovie.set(candidate.movie_id, genreId);
+                featureByGenre.set(genreId, candidate);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    const constrainedFirst = [...candidatesByGenre.entries()].sort(([, a], [, b]) =>
+        a.length - b.length || Number(a[0]?.movie_count || 0) - Number(b[0]?.movie_count || 0));
+    for (const [genreId] of constrainedFirst) assign(genreId, new Set(), new Set());
+    return featureByGenre;
+}
 
 function registerDiscovery(app, db, requireAuth) {
     const cards = (rows) => rows.map((m) => ({ ...m, posterUrl: `/poster/${m.movie_id}` }));
@@ -66,12 +114,26 @@ function registerDiscovery(app, db, requireAuth) {
     }
     app.get('/', async (req, res, next) => {
         try {
-            const [trending, top, picks] = await Promise.all([
+            const [trending, top, picks, genreFeatures] = await Promise.all([
                 (app.locals.loadTrending || getTrending)(),
                 db.query('SELECT * FROM movie WHERE vote_count >= 200 ORDER BY vote_average DESC NULLS LAST, vote_count DESC, movie_id LIMIT 6'),
                 suggestions(res.locals.currentUser?.user_id).catch(() => []),
+                db.query(`SELECT genre_id, movie_id, title, movie_count, position FROM (
+                    SELECT mg.genre_id, m.movie_id, m.title,
+                        count(*) OVER (PARTITION BY mg.genre_id) AS movie_count,
+                        row_number() OVER (PARTITION BY mg.genre_id
+                            ORDER BY m.vote_average DESC NULLS LAST, m.vote_count DESC, m.movie_id) AS position
+                    FROM movie_genres mg JOIN movie m ON m.movie_id = mg.movie_id
+                    WHERE mg.genre_id = ANY($1::int[]) AND m.vote_count >= 200
+                ) ranked WHERE position <= 50`, [genres.map((genre) => genre.id)]).catch(() => ({ rows: [] })),
             ]);
-            res.render('index', { trending, top: cards(top.rows), picks, genres });
+            const featuredByGenre = selectUniqueGenreFeatures(genreFeatures.rows);
+            const homeGenres = genres.flatMap((genre) => {
+                const featured = featuredByGenre.get(genre.id);
+                return featured ? [{ ...genre, movieCount: Number(featured.movie_count),
+                    posterUrl: `/poster/${featured.movie_id}` }] : [];
+            });
+            res.render('index', { trending, top: cards(top.rows), picks, genres: homeGenres });
         } catch (error) { next(error); }
     });
     app.get('/explorar', async (req, res, next) => {
@@ -106,4 +168,4 @@ function registerDiscovery(app, db, requireAuth) {
         } catch (error) { next(error); }
     });
 }
-module.exports = { registerDiscovery, loadTrending, getTrending };
+module.exports = { registerDiscovery, loadTrending, getTrending, selectUniqueGenreFeatures };

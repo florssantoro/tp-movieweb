@@ -4,6 +4,13 @@ La portada muestra tendencias semanales de TMDB con hasta seis tráileres,
 géneros y las películas mejor puntuadas del catálogo local (al menos 200 votos).
 No incluye una sección de cartelera.
 
+La fila horizontal de géneros usa como imagen representativa la película mejor
+puntuada de cada categoría y muestra la cantidad de títulos disponibles. Se
+puede deslizar o recorrer con controles manuales. Los géneros con películas
+forman parte de la misma fila y enlazan directamente al filtro correspondiente.
+Cada tarjeta usa una película representativa diferente; las categorías sin
+títulos disponibles no se muestran.
+
 `/explorar` filtra por género y pagina el catálogo. `/que-ver` prioriza géneros
 de favoritas o películas puntuadas con 4–5, excluye vistas y permite elegir
 género o duración de hasta 100 minutos. Para visitantes ofrece títulos bien
