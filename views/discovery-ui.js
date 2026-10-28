@@ -63,3 +63,33 @@
     dialog.addEventListener('close', () => { dialog.querySelector('.trailer-player').replaceChildren(); opener?.focus(); });
     update();
 })();
+
+(() => {
+    const track = document.querySelector('[data-genre-track]');
+    const controls = document.querySelector('.genre-rail-controls');
+    if (!track || !controls) return;
+    const previous = controls.querySelector('[data-genre-prev]');
+    const next = controls.querySelector('[data-genre-next]');
+    const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+    let updateFrame;
+    function update() {
+        controls.hidden = track.scrollWidth <= track.clientWidth + 1;
+        previous.disabled = track.scrollLeft <= 1;
+        next.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 1;
+    }
+    function move(direction) {
+        const card = track.querySelector('.genre-card');
+        if (!card) return;
+        const gap = parseFloat(getComputedStyle(track).gap) || 0;
+        track.scrollBy({ left: direction * (card.getBoundingClientRect().width + gap), behavior: reduced.matches ? 'auto' : 'smooth' });
+    }
+    previous.addEventListener('click', () => move(-1));
+    next.addEventListener('click', () => move(1));
+    track.addEventListener('scroll', () => {
+        cancelAnimationFrame(updateFrame);
+        updateFrame = requestAnimationFrame(update);
+    }, { passive: true });
+    if ('ResizeObserver' in window) new ResizeObserver(update).observe(track);
+    else window.addEventListener('resize', update);
+    update();
+})();

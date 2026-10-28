@@ -2,7 +2,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const bcrypt = require('bcryptjs');
 const { app, db } = require('../app');
-const { loadTrending } = require('../discovery');
+const { loadTrending, selectUniqueGenreFeatures } = require('../discovery');
 let server, base, userId, cookie;
 const remoteId = 2100000000;
 let createdRemote = false;
@@ -29,7 +29,22 @@ after(async () => {
 test('home degrades gracefully and genre filters stay paginated and validated', async () => {
     const home = await fetch(base);
     assert.equal(home.status,200);
-    assert.match(await home.text(), /Las tendencias vuelven pronto/);
+    const homeHtml = await home.text();
+    assert.match(homeHtml, /Las tendencias vuelven pronto/);
+    assert.match(homeHtml, /class="genre-image" src="\/poster\/\d+"/);
+    assert.match(homeHtml, /<h3>Terror<\/h3><span class="genre-count">\d+ películas/);
+    assert.match(homeHtml, /data-genre-track/);
+    const genreCards = [...homeHtml.matchAll(/class="genre-card" href="\/explorar\?genero=(\d+)"/g)];
+    const posterIds = [...homeHtml.matchAll(/class="genre-image" src="\/poster\/(\d+)"/g)].map((match) => match[1]);
+    assert.equal(posterIds.length, genreCards.length);
+    assert.equal(new Set(posterIds).size, posterIds.length);
+    assert.doesNotMatch(homeHtml, /Explorar género/);
+    assert.doesNotMatch(homeHtml, /Ver más géneros/);
+    assert.match(homeHtml, /class="genre-card" href="\/explorar\?genero=53"[^>]*>.*?<h3>Thriller<\/h3>/);
+    const renderedGenreIds = genreCards.map((match) => Number(match[1]));
+    const populatedGenres = await db.query(`SELECT DISTINCT mg.genre_id FROM movie_genres mg
+        JOIN movie m ON m.movie_id=mg.movie_id WHERE m.vote_count >= 200 AND mg.genre_id=ANY($1::int[])`, [renderedGenreIds]);
+    assert.equal(populatedGenres.rowCount, renderedGenreIds.length);
     const horror = await fetch(`${base}/explorar?genero=27`);
     assert.equal(horror.status,200);
     const html = await horror.text();
@@ -37,7 +52,18 @@ test('home degrades gracefully and genre filters stay paginated and validated', 
     assert.equal(ids.length,24);
     const matched = await db.query('SELECT DISTINCT movie_id FROM movie_genres WHERE genre_id=27 AND movie_id=ANY($1::int[])',[ids]);
     assert.equal(matched.rowCount,24);
+    assert.equal((await fetch(`${base}/explorar?genero=53`)).status,200);
     for (const query of ['page=-1','genero=bad','orden=invalid']) assert.equal((await fetch(`${base}/explorar?${query}`)).status,400);
+});
+test('genre features use a different representative movie for each populated genre', () => {
+    const selected = selectUniqueGenreFeatures([
+        { genre_id: 1, movie_id: 10, movie_count: 2, position: 1 },
+        { genre_id: 1, movie_id: 11, movie_count: 2, position: 2 },
+        { genre_id: 2, movie_id: 10, movie_count: 1, position: 1 },
+    ]);
+    assert.equal(selected.get(1).movie_id, 11);
+    assert.equal(selected.get(2).movie_id, 10);
+    assert.equal(selectUniqueGenreFeatures([]).size, 0);
 });
 test('personal lists require login and suggestions exclude watched movies', async () => {
     assert.equal((await fetch(`${base}/mi-lista`,{redirect:'manual'})).headers.get('location'),'/login');
