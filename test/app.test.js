@@ -1,6 +1,8 @@
 const { after, afterEach, before, test } = require('node:test');
 const assert = require('node:assert/strict');
 
+// Los tests no usan el MongoDB real: sin MONGO_URL, activity.js no se conecta.
+process.env.MONGO_URL = '';
 const { app, db } = require('../app');
 
 let baseUrl;

@@ -128,3 +128,59 @@ Crear una página de perfil de usuario donde se muestre un "timeline" o feed de 
   }
 }
 ```
+
+---
+
+## Puesta en marcha
+
+### 1. Dependencias
+```bash
+npm install
+```
+
+### 2. Variables de entorno
+Copiar `.env.example` a `.env` y completar los valores. El archivo `.env` no se sube al repositorio.
+
+| Variable | Para qué sirve |
+|---|---|
+| `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_DATABASE` | Conexión a PostgreSQL |
+| `SESSION_SECRET` | Firma de las sesiones de login. Cualquier texto largo y aleatorio |
+| `TMDB_API_KEY` | Opcional. Pósters, tráileres y sinopsis en español ([themoviedb.org](https://www.themoviedb.org) → Configuración → API) |
+| `MONGO_URL`, `MONGO_DB` | Conexión a MongoDB para el timeline (ej. `mongodb://localhost:27017` y `movieweb`) |
+
+### 3. PostgreSQL
+Crear la base `movies` y, desde la carpeta `db`, ejecutar:
+```bash
+psql --single-transaction -d movies -U postgres -f 00_load_all.sql
+```
+`00_load_all.sql` carga las películas y también las tablas de usuarios (`13_users.sql`, `14_movie_interactions.sql` y `15_user_auth.sql`). Ver `db/README.md` para actualizar una base existente.
+
+### 4. MongoDB
+Alcanza con tener el servidor de MongoDB corriendo y las variables `MONGO_URL` y `MONGO_DB` en el `.env`. La base, la colección `user_activity` y su índice `{ userId: 1, timestamp: -1 }` se crean solos con el primer evento.
+
+### 5. Ejecutar
+```bash
+npm start
+```
+La aplicación queda en http://localhost:3500.
+
+```bash
+npm test
+```
+Los tests usan la base PostgreSQL local, pero no el MongoDB real: lo reemplazan por uno falso.
+
+### Timeline de actividad con MongoDB
+- **PostgreSQL guarda el estado actual** de cada usuario con cada película (`movie_user`): si es favorita, la puntuación y la opinión.
+- **MongoDB guarda el historial** en la colección `user_activity`: cada cambio es un documento nuevo.
+
+Al guardar una interacción (`POST /pelicula/:id/interaccion`), la aplicación compara el estado anterior con el nuevo y registra solo lo que cambió:
+
+| Cambio | `type` | `details` |
+|---|---|---|
+| La película pasa a ser favorita | `ADDED_TO_FAVORITES` | `movieId`, `movieTitle` |
+| Cambia la puntuación | `RATED_MOVIE` | `movieId`, `movieTitle`, `rating` |
+| Cambia la opinión | `WROTE_REVIEW` | `movieId`, `movieTitle`, `opinion` |
+
+El perfil del usuario (`/perfil` y `/usuarios/:id`) muestra los últimos 20 eventos en la sección "Actividad reciente", con `find({ userId }).sort({ timestamp: -1 })`. El código está en `activity.js`.
+
+Si MongoDB no está disponible, la aplicación sigue funcionando: las interacciones se guardan en PostgreSQL y el perfil muestra un aviso en lugar del timeline.

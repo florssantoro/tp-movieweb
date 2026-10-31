@@ -2,9 +2,9 @@
 
 ## Project Context
 
-- The application currently uses Node.js, Express, EJS, and PostgreSQL.
+- The application uses Node.js, Express, EJS, PostgreSQL, and MongoDB.
 - Run it with `npm start` and verify changes with `npm test`.
-- MongoDB belongs to a later assignment requirement; do not assume it is implemented yet.
+- MongoDB stores only the user activity timeline (`activity.js`, collection `user_activity`); PostgreSQL remains the source of truth for users and interactions.
 - Keep credentials in the local `.env` file. Never commit secrets or API tokens.
 
 ## Shared Skills

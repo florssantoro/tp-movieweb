@@ -631,3 +631,38 @@ body.movie-page { line-height: 1.55; }
     .movie-footer, .site-footer .container { align-items: flex-start; flex-direction: column; }
     .row { flex-direction: column; gap: 8px; }
 }
+
+/* ---------- Timeline de actividad (MongoDB) ---------- */
+
+.timeline { position: relative; display: grid; gap: 4px; }
+.timeline::before {
+    content: "";
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 19px;
+    width: 2px;
+    background: var(--border);
+}
+.timeline-item { position: relative; display: flex; gap: 16px; padding: 10px 0; }
+.timeline-icon {
+    position: relative;
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border-strong);
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    font-size: 17px;
+}
+.timeline-icon-rated_movie { color: var(--gold); }
+.timeline-icon-added_to_favorites { color: var(--accent); }
+.timeline-icon-wrote_review { color: var(--link); }
+.timeline-body { min-width: 0; padding-top: 8px; }
+.timeline-text { margin: 0; color: var(--text-muted); }
+.timeline-text strong { color: var(--text); }
+.timeline-text a { font-weight: 600; }
+.timeline-date { display: block; margin-top: 4px; color: var(--text-faint); font-size: 13px; }
+.timeline .quote { margin-top: 8px; }

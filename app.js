@@ -13,6 +13,7 @@ const session = require('express-session');
 
 const { Pool } = require('pg');
 const { getTmdbMovie, getTmdbPoster } = require('./tmdb');
+const { logActivity, getTimeline } = require('./activity');
 
 const app = express();
 const port = process.env.PORT || 3500;
@@ -510,7 +511,18 @@ const renderUserProfile = async (res, user, isOwnProfile) => {
 
     try {
         const moviesResult = await db.query(moviesQuery, [userId]);
-        res.render('usuario', { user, movies: moviesResult.rows, isOwnProfile });
+
+        // El timeline viene de MongoDB. Si no está disponible, el perfil se muestra igual.
+        let activity = [];
+        let activityAvailable = true;
+        try {
+            activity = await (app.locals.getTimeline || getTimeline)(userId);
+        } catch (err) {
+            activityAvailable = false;
+            console.warn('No se pudo leer la actividad de MongoDB:', err.message);
+        }
+
+        res.render('usuario', { user, movies: moviesResult.rows, isOwnProfile, activity, activityAvailable });
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar el perfil del usuario.');
@@ -618,6 +630,32 @@ app.get('/usuarios/:id/editar', requireAuth, (req, res) => {
 
 app.post('/usuarios/:id/eliminar', (req, res) => res.status(404).send('Ruta no disponible.'));
 
+// Compara la interacción anterior con la nueva y registra en MongoDB lo que cambió.
+async function recordActivity(userId, movieId, before, after) {
+    const events = [];
+    if (after.is_favorite && !before.is_favorite) {
+        events.push({ type: 'ADDED_TO_FAVORITES', extra: {} });
+    }
+    if (after.rating !== null && after.rating !== before.rating) {
+        events.push({ type: 'RATED_MOVIE', extra: { rating: after.rating } });
+    }
+    if (after.opinion && after.opinion !== before.opinion) {
+        events.push({ type: 'WROTE_REVIEW', extra: { opinion: after.opinion } });
+    }
+    if (events.length === 0) return;
+
+    try {
+        const movie = await db.query('SELECT title FROM movie WHERE movie_id = $1', [movieId]);
+        const movieTitle = movie.rows[0]?.title || null;
+        for (const event of events) {
+            await (app.locals.logActivity || logActivity)(userId, event.type, { movieId, movieTitle, ...event.extra });
+        }
+    } catch (err) {
+        // Si MongoDB no está disponible, la interacción ya quedó guardada en PostgreSQL.
+        console.warn('No se pudo registrar la actividad en MongoDB:', err.message);
+    }
+}
+
 // Guarda la interacción completa o solamente la valoración del endpoint anterior.
 app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, async (req, res) => {
     const legacy = req.path.endsWith('/calificar');
@@ -668,8 +706,14 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
         if (!exists.rows[0].valid_user || !exists.rows[0].valid_movie) {
             return res.status(400).send('El usuario o la película no existen.');
         }
+        const previous = (await db.query(
+            'SELECT rating, opinion, is_favorite FROM movie_user WHERE user_id = $1 AND movie_id = $2',
+            [userId, movieId]
+        )).rows[0] || { rating: null, opinion: null, is_favorite: false };
+
         if (legacy) {
             await db.query(upsertQuery, [userId, movieId, rating, opinion]);
+            await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: previous.is_favorite });
         } else if (remove || (!favorite && !watchStatus && rating === null && !opinion)) {
             await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2', [userId, movieId]);
         } else {
@@ -679,6 +723,7 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
                 rating = EXCLUDED.rating, opinion = EXCLUDED.opinion,
                 is_favorite = EXCLUDED.is_favorite, watch_status = EXCLUDED.watch_status`,
                 [userId, movieId, rating, opinion, favorite, watchStatus]);
+            await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: favorite });
         }
         res.redirect(`/pelicula/${movieId}#rate-heading`);
     } catch (err) {
