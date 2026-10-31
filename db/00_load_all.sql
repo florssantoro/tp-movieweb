@@ -53,4 +53,10 @@
 \echo '\n13. Loading users and movie_users table'
 \i 13_users.sql
 
+\echo '\n14. Loading movie interactions (favorites and watch status)...'
+\i 14_movie_interactions.sql
+
+\echo '\n15. Loading user authentication...'
+\i 15_user_auth.sql
+
 \echo '\n--- Database setup complete! ---'
