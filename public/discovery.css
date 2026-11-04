@@ -72,3 +72,57 @@
 @media(max-width:1000px) { .discovery-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } .site-header-inner { flex-wrap:wrap; gap:12px; padding-block:12px; } .site-nav { flex-wrap:wrap; } .header-search { flex:1 1 220px; } }
 @media(max-width:600px) { .discovery { padding-top:28px; } .discovery-heading { align-items:start; flex-direction:column; gap:16px; } .trailer-slide { min-height:450px; } .trailer-copy { padding:24px; } .trailer-copy h3 { font-size:32px; } .discovery-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:24px 16px; } .genre-card { flex-basis:min(82vw,310px); } .genre-card-copy { display:block; min-height:82px; } .genre-count { display:block; margin-top:4px; } .suggestion-banner,.list-callout { flex-direction:column; align-items:start; padding:24px; gap:24px; } .discovery-section { margin-top:40px; } .discovery-filters .field { flex:1 1 100%; } }
 @media(prefers-reduced-motion:reduce) { .discovery *, .trailer-dialog * { transition:none!important; animation:none!important; scroll-behavior:auto!important; } }
+
+/* ---------- Portada: imagen de la película a pantalla completa (estilo Netflix) ---------- */
+
+.visually-hidden { position:absolute !important; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0; }
+
+/* En la portada, el header flota transparente sobre la imagen y se oscurece al scrollear.
+   Sin borde: el degradé del fondo se repetía debajo del borde transparente y dibujaba una línea oscura de 1px. */
+.home.has-hero .site-header { background:linear-gradient(180deg, rgba(5,5,8,.82), rgba(5,5,8,0)); border-bottom:0; backdrop-filter:none; transition:background-color 240ms ease, border-color 240ms ease; }
+.home.has-hero .site-header.is-scrolled { background:rgba(11,11,15,.92); backdrop-filter:blur(10px); }
+
+.home-hero { position:relative; width:100%; min-width:0; margin-top:calc(-1 * var(--header-h, 69px)); background:var(--bg); }
+.home-hero .trailer-track { gap:0; border-radius:0; scrollbar-width:none; }
+.home-hero .trailer-track::-webkit-scrollbar { display:none; }
+.home-hero .trailer-track:focus-visible { outline:2px solid var(--link); outline-offset:-4px; }
+.home-hero .trailer-slide { min-height:clamp(560px, 92vh, 900px); border-radius:0; background:var(--bg); }
+.home-hero .trailer-backdrop { object-position:center 22%; animation:hero-zoom 24s ease-out both; }
+/* Degradés: oscurecen la izquierda para leer el texto y funden el borde de abajo con el fondo de la página. */
+.home-hero .trailer-slide::after {
+    background:
+        linear-gradient(90deg, rgba(11,11,15,.94) 0%, rgba(11,11,15,.7) 30%, rgba(11,11,15,.15) 62%, rgba(11,11,15,0) 80%),
+        linear-gradient(0deg, var(--bg) 0%, rgba(11,11,15,.75) 16%, rgba(11,11,15,0) 48%),
+        linear-gradient(180deg, rgba(11,11,15,.6) 0%, rgba(11,11,15,0) 22%);
+}
+.home-hero .trailer-copy { width:min(100% - 48px, var(--container)); max-width:none; margin-inline:auto; padding:0 0 clamp(88px, 14vh, 150px); }
+.home-hero .trailer-copy .eyebrow { display:flex; align-items:center; gap:10px; margin-bottom:16px; color:var(--text-muted); font-size:12px; letter-spacing:.16em; text-transform:uppercase; }
+.home-hero .home-hero-tag { padding:4px 9px; border-radius:4px; background:var(--accent); color:#fff; letter-spacing:.12em; }
+.home-hero .trailer-copy h3 { max-width:16ch; margin-bottom:14px; font-size:clamp(42px, 6.4vw, 88px); font-weight:900; line-height:.95; letter-spacing:-.04em; text-shadow:0 2px 24px rgba(0,0,0,.45); }
+.home-hero-meta { display:flex; flex-wrap:wrap; gap:6px 18px; margin:0 0 16px; color:var(--text); font-size:16px; font-weight:600; }
+.home-hero-meta .stars { letter-spacing:0; }
+.home-hero .trailer-overview { max-width:52ch; margin:0 0 26px; color:rgba(244,244,246,.86); font-size:clamp(16px, 1.3vw, 19px); line-height:1.55; text-shadow:0 1px 12px rgba(0,0,0,.5); }
+.home-hero .form-actions { gap:12px; }
+.home-hero .btn { height:50px; padding:0 26px; font-size:16px; }
+.home-hero .btn-icon { width:20px; height:20px; fill:currentColor; }
+.home-hero .btn-ghost { background:rgba(109,109,118,.42); border-color:transparent; color:#fff; backdrop-filter:blur(6px); }
+.home-hero .btn-ghost:hover { background:rgba(109,109,118,.62); }
+.home-hero-controls { position:absolute; z-index:2; right:max(24px, calc((100% - var(--container)) / 2)); bottom:clamp(88px, 14vh, 150px); }
+.home-hero + .discovery { position:relative; z-index:1; padding-top:0; }
+.home-hero + .discovery > .discovery-section:first-child { margin-top:8px; }
+@keyframes hero-zoom { from { transform:scale(1.08); } to { transform:scale(1); } }
+
+@media (max-width:760px) {
+    .home-hero .trailer-slide { min-height:clamp(520px, 86vh, 760px); }
+    .home-hero .trailer-slide::after {
+        background:
+            linear-gradient(0deg, var(--bg) 0%, rgba(11,11,15,.88) 30%, rgba(11,11,15,.25) 62%, rgba(11,11,15,.55) 100%);
+    }
+    .home-hero .trailer-copy { width:min(100% - 32px, 640px); padding-bottom:92px; }
+    .home-hero .trailer-copy h3 { font-size:clamp(36px, 11vw, 52px); }
+    .home-hero .trailer-overview { -webkit-line-clamp:3; }
+    .home-hero .btn { height:46px; padding:0 20px; font-size:15px; }
+    .home-hero-controls { left:16px; right:auto; bottom:28px; }
+    .home-hero-controls button { width:40px; height:40px; }
+}
+@media (prefers-reduced-motion:reduce) { .home-hero *, .home .site-header { transition:none !important; animation:none !important; } }
