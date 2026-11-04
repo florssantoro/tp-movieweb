@@ -7,72 +7,115 @@
 <%- include('partials/header') %>
 <%
 const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+const hasResults = movies.length || genreMovies.length || keywordMovies.length || actors.length || directors.length;
 %>
 
 <main class="page">
     <div class="container">
         <header class="page-header">
             <p class="eyebrow">Búsqueda</p>
-            <h1><%= locals.query ? `Resultados para "${locals.query}"` : 'Resultado de la búsqueda' %></h1>
+            <h1><%= locals.searchQuery ? `Resultados para "${locals.searchQuery}"` : 'Resultado de la búsqueda' %></h1>
         </header>
 
         <% if (emptySearch) { %>
-            <p class="empty">Ingresá una película, actor o director para buscar.</p>
+            <p class="empty">Ingresá una película, persona o tema para buscar.</p>
         <% } else { %>
 
+        <% if (!hasResults) { %>
+            <p class="empty">No encontramos coincidencias. Probá con otro título, nombre o tema.</p>
+        <% } else { %>
+
+        <% if (movies.length) { %>
         <section class="section" aria-labelledby="movies-heading">
             <h2 class="section-title" id="movies-heading">Películas <span class="count"><%= movies.length %></span></h2>
-            <% if (movies.length === 0) { %>
-                <p class="empty">No se encontraron películas.</p>
-            <% } else { %>
-                <ul class="tile-grid">
-                    <% movies.forEach((movie) => { %>
-                        <li>
-                            <a class="tile" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
-                                <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
+            <ul class="tile-grid">
+                <% movies.forEach((movie) => { %>
+                    <li>
+                        <a class="tile" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
+                            <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
+                            <span class="tile-title"><%= movie.title %></span>
+                        </a>
+                    </li>
+                <% }); %>
+            </ul>
+        </section>
+        <% } %>
+
+        <% if (genreMovies.length) { %>
+        <section class="section" aria-labelledby="genre-movies-heading">
+            <h2 class="section-title" id="genre-movies-heading">Películas de <%= matchedGenres.map((genre) => genre.name).join(' · ') %> <span class="count"><%= genreMovies.length %></span></h2>
+            <ul class="tile-grid">
+                <% genreMovies.forEach((movie) => { %>
+                    <li>
+                        <a class="tile tile-related" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
+                            <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
+                            <span class="tile-related-copy">
+                                <span class="tile-match" aria-label="Género: <%= movie.genreNames %>"><%= movie.genreNames %></span>
                                 <span class="tile-title"><%= movie.title %></span>
-                            </a>
-                        </li>
-                    <% }); %>
-                </ul>
+                                <span class="tile-meta"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : 'Año desconocido' %></span>
+                            </span>
+                        </a>
+                    </li>
+                <% }); %>
+            </ul>
+            <% if (matchedGenres.length === 1) { %>
+                <a class="section-more" href="/explorar?genero=<%= matchedGenres[0].id %>">Ver más de <%= matchedGenres[0].name %> →</a>
             <% } %>
         </section>
+        <% } %>
 
+        <% if (keywordMovies.length) { %>
+        <section class="section" aria-labelledby="keyword-movies-heading">
+            <h2 class="section-title" id="keyword-movies-heading">Películas relacionadas <span class="count"><%= keywordMovies.length %></span></h2>
+            <ul class="tile-grid">
+                <% keywordMovies.forEach((movie) => { %>
+                    <li>
+                        <a class="tile tile-related" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
+                            <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
+                            <span class="tile-related-copy">
+                                <span class="tile-match" aria-label="Tema relacionado: <%= movie.keywords %>"><%= movie.keywords %></span>
+                                <span class="tile-title"><%= movie.title %></span>
+                                <span class="tile-meta"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : 'Año desconocido' %></span>
+                            </span>
+                        </a>
+                    </li>
+                <% }); %>
+            </ul>
+        </section>
+        <% } %>
+
+        <% if (actors.length) { %>
         <section class="section" aria-labelledby="actors-heading">
             <h2 class="section-title" id="actors-heading">Actores <span class="count"><%= actors.length %></span></h2>
-            <% if (actors.length === 0) { %>
-                <p class="empty">No se encontraron actores.</p>
-            <% } else { %>
-                <ul class="person-grid">
-                    <% actors.forEach((actor) => { %>
-                        <li>
-                            <a class="person-card" href="/actor/<%= actor.person_id %>">
-                                <span class="avatar" aria-hidden="true"><%= initials(actor.person_name) %></span>
-                                <%= actor.person_name %>
-                            </a>
-                        </li>
-                    <% }); %>
-                </ul>
-            <% } %>
+            <ul class="person-grid">
+                <% actors.forEach((actor) => { %>
+                    <li>
+                        <a class="person-card" href="/actor/<%= actor.person_id %>">
+                            <span class="avatar" aria-hidden="true"><%= initials(actor.person_name) %><img class="avatar-photo" src="/persona/<%= actor.person_id %>/foto" alt="" width="80" height="80" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')"></span>
+                            <%= actor.person_name %>
+                        </a>
+                    </li>
+                <% }); %>
+            </ul>
         </section>
+        <% } %>
 
+        <% if (directors.length) { %>
         <section class="section" aria-labelledby="directors-heading">
             <h2 class="section-title" id="directors-heading">Directores <span class="count"><%= directors.length %></span></h2>
-            <% if (directors.length === 0) { %>
-                <p class="empty">No se encontraron directores.</p>
-            <% } else { %>
-                <ul class="person-grid">
-                    <% directors.forEach((director) => { %>
-                        <li>
-                            <a class="person-card" href="/director/<%= director.person_id %>">
-                                <span class="avatar" aria-hidden="true"><%= initials(director.person_name) %></span>
-                                <%= director.person_name %>
-                            </a>
-                        </li>
-                    <% }); %>
-                </ul>
-            <% } %>
+            <ul class="person-grid">
+                <% directors.forEach((director) => { %>
+                    <li>
+                        <a class="person-card" href="/director/<%= director.person_id %>">
+                            <span class="avatar" aria-hidden="true"><%= initials(director.person_name) %><img class="avatar-photo" src="/persona/<%= director.person_id %>/foto" alt="" width="80" height="80" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')"></span>
+                            <%= director.person_name %>
+                        </a>
+                    </li>
+                <% }); %>
+            </ul>
         </section>
+        <% } %>
+        <% } %>
         <% } %>
     </div>
 </main>

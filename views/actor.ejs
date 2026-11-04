@@ -12,7 +12,7 @@ const initials = String(person.person_name || '?').trim().split(/\s+/).slice(0, 
 <main class="page">
     <div class="container">
         <header class="profile-head">
-            <span class="avatar avatar-lg" aria-hidden="true"><%= initials %></span>
+            <span class="avatar avatar-lg" aria-hidden="true"><%= initials %><img class="avatar-photo" src="/persona/<%= person.person_id %>/foto" alt="" width="176" height="176" decoding="async" fetchpriority="high" onload="this.classList.add('is-loaded')"></span>
             <div>
                 <p class="eyebrow">Actor</p>
                 <h1><%= person.person_name %></h1>

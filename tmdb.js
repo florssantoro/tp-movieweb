@@ -1,8 +1,10 @@
 const TMDB_API = 'https://api.themoviedb.org/3';
 const POSTER_CACHE_LIMIT = 1000;
+const PERSON_PHOTO_CACHE_LIMIT = 1000;
 
 // Recuerda los pósters ya consultados (y los pedidos en curso) para no repetir llamadas a TMDB.
 const posterCache = new Map();
+const personPhotoCache = new Map();
 
 function buildPosterUrl(posterPath, size) {
     return typeof posterPath === 'string' && /^\/[a-zA-Z0-9_-]+\.(jpg|png|webp)$/.test(posterPath)
@@ -89,4 +91,31 @@ async function getTmdbPoster(movieId, { apiKey = process.env.TMDB_API_KEY, fetch
     }
 }
 
-module.exports = { getTmdbMovie, getTmdbPoster, buildPosterUrl };
+// Devuelve una foto chica de la persona para resultados de búsqueda, o null si TMDB no tiene una.
+async function getTmdbPersonPhoto(personId, { apiKey = process.env.TMDB_API_KEY, fetchImpl = fetch, cache = personPhotoCache } = {}) {
+    if (!apiKey) return null;
+    if (cache.has(personId)) return cache.get(personId);
+
+    const lookup = (async () => {
+        const url = new URL(`${TMDB_API}/person/${personId}`);
+        url.searchParams.set('api_key', apiKey);
+        url.searchParams.set('language', 'es-AR');
+        const response = await fetchImpl(url, { signal: AbortSignal.timeout(3500) });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+        const details = await response.json();
+        return buildPosterUrl(details.profile_path, 'w185');
+    })();
+
+    if (cache.size >= PERSON_PHOTO_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+    cache.set(personId, lookup);
+
+    try {
+        return await lookup;
+    } catch {
+        if (cache.get(personId) === lookup) cache.delete(personId);
+        return null;
+    }
+}
+
+module.exports = { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto, buildPosterUrl };

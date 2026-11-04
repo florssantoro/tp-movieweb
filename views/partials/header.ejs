@@ -5,7 +5,6 @@
             <a href="/explorar">Explorar</a>
             <a href="/que-ver">¿Qué ver?</a>
             <a href="/mi-lista">Mi lista</a>
-            <a href="/keyword">Palabras clave</a>
             <% if (locals.currentUser) { %>
                 <a href="/perfil">Perfil</a>
                 <form class="nav-form" action="/logout" method="POST"><button type="submit">Salir</button></form>
@@ -16,7 +15,18 @@
         </nav>
         <% if (locals.showSearch !== false) { %>
             <form class="header-search" action="/buscar" method="GET" role="search">
-                <input type="search" name="q" value="<%= locals.query || '' %>" placeholder="Buscar películas, actores o directores" aria-label="Buscar películas, actores o directores">
+                <div class="header-search-shell">
+                    <select name="tipo" aria-label="Buscar por categoría">
+                        <option value="all" <%= !locals.searchType || locals.searchType === 'all' ? 'selected' : '' %>>Todo</option>
+                        <option value="movie" <%= locals.searchType === 'movie' ? 'selected' : '' %>>Películas</option>
+                        <option value="actor" <%= locals.searchType === 'actor' ? 'selected' : '' %>>Actores</option>
+                        <option value="director" <%= locals.searchType === 'director' ? 'selected' : '' %>>Directores</option>
+                        <option value="genre" <%= locals.searchType === 'genre' ? 'selected' : '' %>>Géneros</option>
+                        <option value="keyword" <%= locals.searchType === 'keyword' ? 'selected' : '' %>>Palabras clave</option>
+                    </select>
+                    <input type="search" name="q" value="<%= locals.searchQuery || '' %>" placeholder="Buscar en MovieWeb" aria-label="Término de búsqueda">
+                    <button type="submit" aria-label="Buscar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></button>
+                </div>
             </form>
         <% } %>
     </div>

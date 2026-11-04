@@ -67,7 +67,7 @@ Se deben completar las siguientes tareas como parte de este TP:
 *   Modificar la página de resultados de búsqueda (`resultado.ejs`) para mostrar los resultados separados en secciones (películas, actores, directores).
 *   Desarrollar la funcionalidad para mostrar la lista de películas en las que una persona (actor o director) ha participado al hacer clic en su nombre. Página de actor (`actor.ejs`) y director (`director.ejs`).
 *   Mejorar la página de película (`pelicula.ejs`) para mostrar toda la información contenida en la base de datos `movies`.
-*   Implementar un buscador de palabras clave que devuelva películas relacionadas. Crear las páginas del buscador y de resultados (`search_keyword.ejs` y `resultados_keyword.ejs`).
+*   Integrar la búsqueda por palabras clave al buscador general para devolver películas relacionadas junto con películas, actores y directores.
 *   Crear las tablas y archivos necesarios para permitir la creación, modificación y borrado de usuarios (`user_id`, `user_username`, `user_name`, `user_email`) y las películas que les gustan (`movie_user`). Debe ser posible listar los usuarios, las películas asociadas a los usuarios, la puntuación que asignaron a una determinada película y la opinión sobre esa película.
 
 ---

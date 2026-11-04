@@ -1,6 +1,6 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { getTmdbMovie, getTmdbPoster } = require('../tmdb');
+const { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto } = require('../tmdb');
 
 test('TMDB details use Spanish trailer when available', async () => {
     const calls = [];
@@ -92,4 +92,25 @@ test('TMDB poster lookup remembers missing posters but retries after errors', as
     assert.equal(calls, 2);
 
     assert.equal(await getTmdbPoster(3, { apiKey: '', cache }), null);
+});
+
+test('TMDB person photo lookup returns a small profile image and caches it', async () => {
+    const calls = [];
+    const cache = new Map();
+    const options = {
+        apiKey: 'test-key',
+        cache,
+        fetchImpl: async (url) => {
+            calls.push(url);
+            return { ok: true, status: 200, json: async () => ({ profile_path: '/profile.jpg' }) };
+        },
+    };
+
+    const first = await getTmdbPersonPhoto(192, options);
+    const second = await getTmdbPersonPhoto(192, options);
+
+    assert.equal(first, 'https://image.tmdb.org/t/p/w185/profile.jpg');
+    assert.equal(second, first);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].pathname, '/3/person/192');
 });
