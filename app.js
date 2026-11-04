@@ -13,7 +13,7 @@ const session = require('express-session');
 
 const { Pool } = require('pg');
 const { getTmdbMovie, getTmdbPoster } = require('./tmdb');
-const { logActivity, getTimeline } = require('./activity');
+const { logActivity, getTimeline, deleteUserActivity } = require('./activity');
 
 const app = express();
 const port = process.env.PORT || 3500;
@@ -580,13 +580,20 @@ app.post('/perfil/password', requireAuth, async (req, res) => {
 
 app.post('/perfil/eliminar', requireAuth, async (req, res) => {
     const password = String(req.body.password || '');
+    const userId = res.locals.currentUser.user_id;
     try {
-        const result = await db.query('SELECT password_hash FROM users WHERE user_id = $1', [res.locals.currentUser.user_id]);
+        const result = await db.query('SELECT password_hash FROM users WHERE user_id = $1', [userId]);
         if (!canComparePassword(password) || !result.rows[0]?.password_hash ||
             !(await bcrypt.compare(password, result.rows[0].password_hash))) {
             return res.status(400).render('perfil_editar', { error: 'Ingresá tu contraseña para eliminar la cuenta.', success: null, values: res.locals.currentUser });
         }
-        await db.query('DELETE FROM users WHERE user_id = $1', [res.locals.currentUser.user_id]);
+        await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
+        try {
+            await (app.locals.deleteUserActivity || deleteUserActivity)(userId);
+        } catch (err) {
+            // MongoDB no debe impedir que el usuario elimine su cuenta principal.
+            console.warn('No se pudo eliminar la actividad de MongoDB:', err.message);
+        }
         req.session.destroy(() => {
             res.clearCookie('movieweb.sid');
             res.redirect('/');

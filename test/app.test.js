@@ -25,6 +25,7 @@ afterEach(() => {
     delete app.locals.loadTmdbMovie;
     delete app.locals.loadTmdbPoster;
     delete app.locals.loadRatingUsers;
+    delete app.locals.deleteUserActivity;
 });
 
 test('empty search shows guidance without result sections', async () => {
@@ -227,6 +228,7 @@ test('users can register, log in, edit their own profile and delete their accoun
     const email = `${suffix}@example.com`;
     const password = 'Password-123!';
     let userId;
+    let deletedActivityUserId;
 
     try {
         const protectedProfile = await fetch(`${baseUrl}/perfil`, { redirect: 'manual' });
@@ -301,10 +303,23 @@ test('users can register, log in, edit their own profile and delete their accoun
         assert.equal(login.status, 302);
         const loginCookie = login.headers.get('set-cookie').split(';')[0];
 
-        const deleted = await fetch(`${baseUrl}/perfil/eliminar`, {
-            method: 'POST', redirect: 'manual', headers: { cookie: loginCookie }, body: new URLSearchParams({ password: newPassword }),
-        });
+        app.locals.deleteUserActivity = async (deletedUserId) => {
+            deletedActivityUserId = deletedUserId;
+            throw new Error('MongoDB caído');
+        };
+
+        const originalWarn = console.warn;
+        console.warn = () => {};
+        let deleted;
+        try {
+            deleted = await fetch(`${baseUrl}/perfil/eliminar`, {
+                method: 'POST', redirect: 'manual', headers: { cookie: loginCookie }, body: new URLSearchParams({ password: newPassword }),
+            });
+        } finally {
+            console.warn = originalWarn;
+        }
         assert.equal(deleted.status, 302);
+        assert.equal(deletedActivityUserId, userId);
         const remaining = await db.query('SELECT 1 FROM users WHERE user_id = $1', [userId]);
         assert.equal(remaining.rows.length, 0);
         userId = undefined;
