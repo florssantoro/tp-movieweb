@@ -59,4 +59,7 @@
 \echo '\n15. Loading user authentication...'
 \i 15_user_auth.sql
 
+\echo '\n16. Repairing escaped Unicode text...'
+\i 16_decode_unicode_escapes.sql
+
 \echo '\n--- Database setup complete! ---'

@@ -28,3 +28,11 @@ contraseñas se guardan únicamente como hash.
 Ejecutar `npm test` contra la base local de desarrollo, con las migraciones
 aplicadas. Las pruebas crean usuarios temporales y un esquema de prueba
 aislado, y los eliminan al finalizar; necesitan permisos para crear esquemas.
+
+## Corrección de caracteres Unicode
+
+Los datos provistos contienen algunos escapes JSON sin la barra inicial, por
+ejemplo `Espau00f1ol` en lugar de `Español`. Para una base ya instalada,
+ejecutar `16_decode_unicode_escapes.sql`. El script corrige idiomas, nombres de
+personas y personajes, productoras y palabras clave. Es idempotente y no
+modifica textos válidos como `Art Chudabala`.

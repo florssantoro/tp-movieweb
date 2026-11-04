@@ -4,7 +4,7 @@ const bcrypt = require('bcryptjs');
 // Los tests no usan el MongoDB real: sin MONGO_URL, activity.js no se conecta.
 process.env.MONGO_URL = '';
 const { app, db } = require('../app');
-const { logActivity, getTimeline } = require('../activity');
+const { logActivity, getTimeline, deleteUserActivity } = require('../activity');
 
 let server, baseUrl, userId, cookie;
 let loggedEvents = [];
@@ -66,6 +66,7 @@ const withoutWarnings = async (callback) => {
 test('activity module does nothing without MONGO_URL and rejects unknown event types', async () => {
     assert.equal(await logActivity(1, 'RATED_MOVIE', { movieId: 11, rating: 5 }), undefined);
     assert.deepEqual(await getTimeline(1), []);
+    assert.equal(await deleteUserActivity(1), undefined);
     await assert.rejects(logActivity(1, 'RATED_MOVEI', {}), /Tipo de actividad desconocido/);
 });
 

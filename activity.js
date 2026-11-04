@@ -55,6 +55,14 @@ async function getTimeline(userId, limit = 20) {
         .toArray();
 }
 
+// Elimina el historial cuando el usuario borra su cuenta.
+async function deleteUserActivity(userId) {
+    const collection = await getCollection();
+    if (!collection) return;
+
+    await collection.deleteMany({ userId });
+}
+
 // Cierra la conexión (para los tests o al apagar la app).
 async function closeActivity() {
     if (client) await client.close();
@@ -62,4 +70,4 @@ async function closeActivity() {
     collectionPromise = null;
 }
 
-module.exports = { ACTIVITY_TYPES, logActivity, getTimeline, closeActivity };
+module.exports = { ACTIVITY_TYPES, logActivity, getTimeline, deleteUserActivity, closeActivity };
