@@ -523,3 +523,37 @@ test('interaction routes require a logged-in user', async () => {
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('location'), '/login');
 });
+
+test('search suggestions autocomplete movies, people, genres and keywords while typing', async () => {
+    const suggest = async (query) => {
+        const response = await fetch(`${baseUrl}/buscar/sugerencias?${new URLSearchParams(query)}`);
+        return { status: response.status, body: await response.json() };
+    };
+
+    const all = await suggest({ q: 'acc' });
+    assert.equal(all.status, 200);
+    assert.ok(all.body.suggestions.length > 0 && all.body.suggestions.length <= 11);
+    assert.deepEqual(all.body.suggestions[0], { type: 'genre', label: 'Acción', detail: 'Género', url: '/explorar?genero=28' });
+    for (const suggestion of all.body.suggestions) {
+        assert.ok(['genre', 'movie', 'actor', 'director', 'keyword'].includes(suggestion.type));
+        assert.match(suggestion.url, /^\/(pelicula|actor|director|explorar|buscar)[/?]/);
+        assert.ok(suggestion.label && suggestion.detail);
+    }
+
+    const movies = await suggest({ q: 'star', tipo: 'movie' });
+    assert.ok(movies.body.suggestions.length > 0 && movies.body.suggestions.length <= 8);
+    assert.ok(movies.body.suggestions.every((suggestion) => suggestion.type === 'movie'));
+    assert.match(movies.body.suggestions[0].label, /^star/i, 'primero lo que empieza con el texto');
+
+    const keywords = await suggest({ q: 'prison', tipo: 'keyword' });
+    assert.equal(keywords.body.suggestions[0].url, '/buscar?tipo=keyword&q=prison');
+
+    assert.deepEqual((await suggest({ q: 'a' })).body, { suggestions: [] });
+    assert.deepEqual((await suggest({ q: '%%' })).body, { suggestions: [] });
+    assert.equal((await suggest({ q: 'acc', tipo: 'invalido' })).status, 400);
+});
+
+test('pages load the search autocomplete script', async () => {
+    const body = await (await fetch(`${baseUrl}/explorar`)).text();
+    assert.match(body, /<script src="\/search-suggest\.js" defer><\/script>/);
+});
