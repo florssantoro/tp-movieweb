@@ -1,0 +1,104 @@
+/* ==========================================================================
+   Tema "rojo cine": fondo negro azulado, dos colores con roles distintos y tipografías propias.
+   - Rojo (--accent): acciones (botones, logo, etiquetas, avatar, selección).
+   - Azul hielo (--accent-2): información y navegación (links, foco, resaltados, etiquetas chicas).
+   Se carga después de los demás CSS, así que redefine sus variables y colores fijos.
+   ========================================================================== */
+
+:root {
+    --bg: #0b131b;
+    --bg-elevated: #111b25;
+    --surface: #172331;
+    --surface-hover: #1f2d3d;
+    --border: #233242;
+    --border-strong: #314356;
+
+    --text: #f2f5f8;
+    --text-muted: #a7b3c0;
+    --text-faint: #748395;
+
+    /* --accent-strong es el rojo de los botones: con texto blanco da 4,6:1 de contraste (WCAG AA). */
+    --accent: #e5484d;
+    --accent-hover: #ef6064;
+    --accent-strong: #d63a40;
+    --accent-strong-hover: #c53238;
+    --accent-soft: rgba(229, 72, 77, 0.16);
+    --accent-2: #79b8f3;
+    --accent-2-hover: #b0d6fa;
+    --accent-2-soft: rgba(121, 184, 243, 0.14);
+    --link: var(--accent-2);
+    --link-hover: var(--accent-2-hover);
+
+    --radius: 12px;
+    --radius-sm: 10px;
+    --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    --font-display: "Outfit", "Inter", system-ui, sans-serif;
+}
+
+/* ---------- Tipografía ---------- */
+
+h1, h2, h3, .brand, .btn, .section-title, .tile-title, .home-hero-tag {
+    font-family: var(--font-display);
+}
+h1, h2 { letter-spacing: -0.025em; }
+.brand { letter-spacing: 0.02em; }
+.btn { font-weight: 700; letter-spacing: 0; }
+
+/* ---------- Botones ---------- */
+
+.btn { background: var(--accent-strong); }
+.btn:hover { background: var(--accent-strong-hover); }
+.btn-ghost { background: var(--surface); border-color: var(--border-strong); }
+.btn-ghost:hover { background: var(--surface-hover); }
+.btn-danger { background: transparent; }
+.home-hero .btn-ghost { background: rgba(31, 45, 61, 0.62); }
+.home-hero .btn-ghost:hover { background: rgba(31, 45, 61, 0.85); }
+
+/* ---------- Colores que estaban escritos a mano en los otros CSS ---------- */
+
+.site-header { background: rgba(11, 19, 27, 0.86); }
+.home.has-hero .site-header { background: linear-gradient(180deg, rgba(7, 12, 18, 0.85), rgba(7, 12, 18, 0)); }
+.home.has-hero .site-header.is-scrolled { background: rgba(11, 19, 27, 0.92); }
+
+.header-search-shell:focus-within { box-shadow: 0 0 0 2px var(--accent-2-soft); }
+.chip-match, .tile-match { border-color: rgba(121, 184, 243, 0.45); }
+.notice { border-color: rgba(121, 184, 243, 0.35); background: var(--accent-2-soft); }
+
+.avatar, .account-avatar { background: linear-gradient(145deg, var(--accent), #8e2328); }
+.account-trigger { background: rgba(23, 35, 49, 0.72); }
+.genre-card-action { background: rgba(11, 19, 27, 0.92); }
+
+.hero {
+    background:
+        radial-gradient(ellipse 70% 55% at 50% 0%, rgba(229, 72, 77, 0.22), transparent 70%),
+        radial-gradient(ellipse 50% 40% at 85% 100%, rgba(121, 184, 243, 0.12), transparent 70%);
+}
+.movie-hero {
+    background:
+        radial-gradient(ellipse 80% 70% at 20% 0%, rgba(229, 72, 77, 0.18), transparent 70%),
+        radial-gradient(ellipse 60% 60% at 95% 100%, rgba(121, 184, 243, 0.1), transparent 70%);
+}
+.movie-hero::after { background: linear-gradient(180deg, rgba(11, 19, 27, 0.2), var(--bg) 96%); }
+
+.trailer-slide::after {
+    background: linear-gradient(90deg, rgba(11, 19, 27, 0.94), rgba(11, 19, 27, 0.38)), linear-gradient(0deg, rgba(11, 19, 27, 0.85), transparent);
+}
+.home-hero .trailer-slide::after {
+    background:
+        linear-gradient(90deg, rgba(11, 19, 27, 0.94) 0%, rgba(11, 19, 27, 0.7) 30%, rgba(11, 19, 27, 0.15) 62%, rgba(11, 19, 27, 0) 80%),
+        linear-gradient(0deg, var(--bg) 0%, rgba(11, 19, 27, 0.75) 16%, rgba(11, 19, 27, 0) 48%),
+        linear-gradient(180deg, rgba(11, 19, 27, 0.6) 0%, rgba(11, 19, 27, 0) 22%);
+}
+
+@media (max-width: 760px) {
+    .home-hero .trailer-slide::after {
+        background: linear-gradient(0deg, var(--bg) 0%, rgba(11, 19, 27, 0.88) 30%, rgba(11, 19, 27, 0.25) 62%, rgba(11, 19, 27, 0.55) 100%);
+    }
+}
+
+/* ---------- Segundo color: azul hielo para la información ---------- */
+
+.eyebrow, .discovery .eyebrow, .movie-eyebrow { color: var(--accent-2); }
+.carousel-controls button[aria-pressed="true"] { color: var(--accent-2); border-color: var(--accent-2); background: var(--accent-2-soft); }
+.btn-ghost:hover { border-color: rgba(121, 184, 243, 0.45); }
+.search-suggest-genre .search-suggest-icon { color: var(--accent-2); }
