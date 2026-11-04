@@ -112,7 +112,8 @@ function selectUniqueGenreFeatures(rows) {
 
 function registerDiscovery(app, db, requireAuth) {
     const cards = (rows) => rows.map((m) => ({ ...m, posterUrl: `/poster/${m.movie_id}` }));
-    async function suggestions(userId, mood = '') {
+    // limit y offset permiten paginar en /que-ver; la portada usa los 6 primeros.
+    async function suggestions(userId, mood = '', { limit = 6, offset = 0 } = {}) {
         const moodGenre = { terror: 27, comedia: 35, drama: 18 }[mood] || null;
         const result = await db.query(`SELECT m.* FROM movie m
             WHERE m.vote_count >= 200
@@ -123,7 +124,7 @@ function registerDiscovery(app, db, requireAuth) {
                 (SELECT mg.genre_id FROM movie_genres mg JOIN movie_user u ON u.movie_id = mg.movie_id
                  WHERE u.user_id = $1 AND (u.is_favorite OR u.rating >= 4))) DESC,
                 m.vote_average DESC NULLS LAST, m.vote_count DESC, m.movie_id
-            LIMIT 6`, [userId || null, moodGenre, mood === 'corta']);
+            LIMIT $4 OFFSET $5`, [userId || null, moodGenre, mood === 'corta', limit, offset]);
         return cards(result.rows);
     }
     app.get('/', async (req, res, next) => {
@@ -167,8 +168,14 @@ function registerDiscovery(app, db, requireAuth) {
     });
     app.get('/que-ver', async (req, res, next) => {
         const mood = req.query.animo || '';
+        const page = Number(req.query.page || 1);
         if (!['', 'terror', 'comedia', 'drama', 'corta'].includes(mood)) return res.status(400).send('Selección inválida.');
-        try { res.render('sugerencias', { movies: await suggestions(res.locals.currentUser?.user_id, mood), mood }); }
+        if (!Number.isInteger(page) || page < 1 || page > 500) return res.status(400).send('Página inválida.');
+        try {
+            // Se pide una película de más para saber si existe una página siguiente.
+            const movies = await suggestions(res.locals.currentUser?.user_id, mood, { limit: 25, offset: (page - 1) * 24 });
+            res.render('sugerencias', { movies: movies.slice(0, 24), mood, page, hasNext: movies.length > 24 });
+        }
         catch (error) { next(error); }
     });
     app.get('/mi-lista', requireAuth, async (req, res, next) => {
