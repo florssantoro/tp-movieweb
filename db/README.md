@@ -36,3 +36,11 @@ ejemplo `Espau00f1ol` en lugar de `Español`. Para una base ya instalada,
 ejecutar `16_decode_unicode_escapes.sql`. El script corrige idiomas, nombres de
 personas y personajes, productoras y palabras clave. Es idempotente y no
 modifica textos válidos como `Art Chudabala`.
+
+## Fechas de interacciones
+
+Ejecutar `17_movie_user_timestamps.sql` para agregar `created_at` y
+`updated_at` a `movie_user`. Las relaciones existentes reciben como fecha la
+ejecución de la migración, ya que su fecha histórica original no estaba
+almacenada. Un trigger actualiza `updated_at` cada vez que cambia la relación.
+Estas fechas permiten ordenar y paginar las películas del perfil.

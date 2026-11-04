@@ -66,6 +66,60 @@ test('interaction lifecycle preserves independent states and legacy ratings', as
     assert.match(await (await fetch(`${baseUrl}/perfil`, { headers: { cookie } })).text(), /todavía no guardó películas ni valoraciones/);
 });
 
+test('profile movie library supports sorting, dates and pagination', async () => {
+    await db.query('DELETE FROM movie_user WHERE user_id = $1', [userId]);
+    try {
+        await db.query(`
+            WITH selected AS (
+                SELECT movie_id, row_number() OVER (ORDER BY movie_id) AS position
+                FROM movie
+                ORDER BY movie_id
+                LIMIT 21
+            )
+            INSERT INTO movie_user (user_id, movie_id, rating, created_at, updated_at)
+            SELECT $1, movie_id, (((position - 1) % 5) + 1)::smallint,
+                   CURRENT_TIMESTAMP - (position::text || ' days')::interval,
+                   CURRENT_TIMESTAMP - (position::text || ' days')::interval
+            FROM selected
+        `, [userId]);
+
+        const defaultResponse = await fetch(`${baseUrl}/perfil`, { headers: { cookie } });
+        const defaultProfile = await defaultResponse.text();
+        assert.equal(defaultResponse.status, 200);
+        assert.match(defaultProfile, /Películas <span class="count">21<\/span>/);
+        assert.equal((defaultProfile.match(/class="row-title"/g) || []).length, 20);
+        assert.match(defaultProfile, /Ordenar películas/);
+        assert.match(defaultProfile, /<button class="btn btn-ghost btn-sm" type="submit">Aplicar<\/button>/);
+        assert.match(defaultProfile, /Guardada\s+<time/);
+        assert.match(defaultProfile, /Página 1 de 2/);
+        assert.match(defaultProfile, /href="\/perfil\?orden=title&amp;page=2"/);
+
+        const expectedRating = (await db.query(`SELECT movie_id FROM movie_user JOIN movie USING (movie_id)
+            WHERE user_id = $1 ORDER BY rating DESC NULLS LAST, title ASC, movie_id ASC LIMIT 1`, [userId])).rows[0].movie_id;
+        const ratingProfile = await (await fetch(`${baseUrl}/perfil?orden=rating`, { headers: { cookie } })).text();
+        assert.match(ratingProfile, /<option value="rating" selected>Mejor puntuación<\/option>/);
+        assert.equal(Number(ratingProfile.match(/class="row-title" href="\/pelicula\/(\d+)"/)[1]), expectedRating);
+
+        const expectedRecent = (await db.query(`SELECT movie_id FROM movie_user WHERE user_id = $1
+            ORDER BY updated_at DESC, movie_id DESC LIMIT 1`, [userId])).rows[0].movie_id;
+        const recentProfile = await (await fetch(`${baseUrl}/perfil?orden=recent`, { headers: { cookie } })).text();
+        assert.equal(Number(recentProfile.match(/class="row-title" href="\/pelicula\/(\d+)"/)[1]), expectedRecent);
+
+        const secondPage = await (await fetch(`${baseUrl}/perfil?orden=title&page=2`, { headers: { cookie } })).text();
+        assert.equal((secondPage.match(/class="row-title"/g) || []).length, 1);
+        assert.match(secondPage, /Página 2 de 2/);
+
+        for (const query of ['orden=invalid', 'page=0', 'page=1.5']) {
+            assert.equal((await fetch(`${baseUrl}/perfil?${query}`, { headers: { cookie } })).status, 400);
+        }
+        const beyondLastPage = await fetch(`${baseUrl}/perfil?orden=recent&page=500`, { redirect: 'manual', headers: { cookie } });
+        assert.equal(beyondLastPage.status, 302);
+        assert.equal(beyondLastPage.headers.get('location'), '/perfil?orden=recent&page=2');
+    } finally {
+        await db.query('DELETE FROM movie_user WHERE user_id = $1', [userId]);
+    }
+});
+
 test('invalid interactions are rejected without changing saved data', async () => {
     await post({ is_favorite: 'on' });
     const original = await saved();
@@ -113,11 +167,14 @@ test('migration supports a fresh installation and preserves existing rows when r
     const initial = fs.readFileSync(path.join(__dirname, '../db/13_users.sql'), 'utf8').replaceAll('movies.', `${schema}.`);
     const migration = fs.readFileSync(path.join(__dirname, '../db/14_movie_interactions.sql'), 'utf8').replaceAll('movies.', `${schema}.`);
     const authMigration = fs.readFileSync(path.join(__dirname, '../db/15_user_auth.sql'), 'utf8').replaceAll('movies.', `${schema}.`);
+    const timestampMigration = fs.readFileSync(path.join(__dirname, '../db/17_movie_user_timestamps.sql'), 'utf8').replaceAll('movies.', `${schema}.`);
     try {
         await client.query(`CREATE SCHEMA ${schema}`);
         await client.query(`CREATE TABLE ${schema}.movie (movie_id INT PRIMARY KEY); INSERT INTO ${schema}.movie VALUES (1)`);
         await client.query(initial);
         await client.query(migration);
+        await client.query(timestampMigration);
+        await client.query(timestampMigration);
         await client.query(`ALTER TABLE ${schema}.users ADD COLUMN password_hash VARCHAR(255)`);
         await client.query(`
             INSERT INTO ${schema}.users (user_username, user_name, user_email, password_hash) VALUES
@@ -126,8 +183,16 @@ test('migration supports a fresh installation and preserves existing rows when r
                 ('caseuser', 'Duplicate username', 'second@example.com', 'hash-2'),
                 ('EmailOne', 'First email', 'same@example.com', 'hash-3'),
                 ('EmailTwo', 'Duplicate email', 'SAME@example.com', 'hash-4');
-            INSERT INTO ${schema}.movie_user (user_id, movie_id, rating, opinion) VALUES (1, 1, 4, 'Legacy')
+            INSERT INTO ${schema}.movie_user (user_id, movie_id, rating, opinion, created_at, updated_at)
+            VALUES (1, 1, 4, 'Legacy', '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z');
+            UPDATE ${schema}.movie_user SET rating = 5 WHERE user_id = 1 AND movie_id = 1
         `);
+        const timestamped = await client.query(`SELECT created_at, updated_at FROM ${schema}.movie_user WHERE user_id = 1 AND movie_id = 1`);
+        assert.ok(timestamped.rows[0].updated_at > timestamped.rows[0].created_at);
+        await client.query(`UPDATE ${schema}.movie_user SET rating = 5 WHERE user_id = 1 AND movie_id = 1`);
+        const unchanged = await client.query(`SELECT created_at, updated_at FROM ${schema}.movie_user WHERE user_id = 1 AND movie_id = 1`);
+        assert.equal(unchanged.rows[0].created_at.getTime(), timestamped.rows[0].created_at.getTime());
+        assert.equal(unchanged.rows[0].updated_at.getTime(), timestamped.rows[0].updated_at.getTime());
         await client.query(authMigration);
         await client.query(authMigration);
         const users = await client.query(`SELECT user_username, user_email, password_hash FROM ${schema}.users ORDER BY user_id`);
@@ -137,6 +202,7 @@ test('migration supports a fresh installation and preserves existing rows when r
         ]);
         assert.equal((await client.query(`SELECT count(*)::int AS count FROM ${schema}.movie_user`)).rows[0].count, 0);
         assert.equal((await client.query(`SELECT is_nullable FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'users' AND column_name = 'password_hash'`, [schema])).rows[0].is_nullable, 'NO');
+        assert.equal((await client.query(`SELECT count(*)::int AS count FROM information_schema.columns WHERE table_schema = $1 AND table_name = 'movie_user' AND column_name IN ('created_at', 'updated_at')`, [schema])).rows[0].count, 2);
         await client.query(migration);
     } finally {
         await client.query('ROLLBACK');

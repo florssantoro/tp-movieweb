@@ -50,6 +50,8 @@ test('home degrades gracefully and genre filters stay paginated and validated', 
     const horror = await fetch(`${base}/explorar?genero=27`);
     assert.equal(horror.status,200);
     const html = await horror.text();
+    assert.match(html, /name="q" value=""/);
+    assert.doesNotMatch(html, /name="q" value="[^"]*(?:genero|orden)=/);
     const ids = [...html.matchAll(/class="discovery-card" href="\/pelicula\/(\d+)"/g)].map((m) => Number(m[1]));
     assert.equal(ids.length,24);
     const matched = await db.query('SELECT DISTINCT movie_id FROM movie_genres WHERE genre_id=27 AND movie_id=ANY($1::int[])',[ids]);

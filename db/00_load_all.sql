@@ -62,4 +62,7 @@
 \echo '\n16. Repairing escaped Unicode text...'
 \i 16_decode_unicode_escapes.sql
 
+\echo '\n17. Adding interaction timestamps...'
+\i 17_movie_user_timestamps.sql
+
 \echo '\n--- Database setup complete! ---'

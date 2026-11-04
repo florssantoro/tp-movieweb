@@ -7,6 +7,10 @@
 <%- include('partials/header') %>
 <%
 const initials = String(user.user_name || user.user_username || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+const profilePath = isOwnProfile ? '/perfil' : `/usuarios/${user.user_id}`;
+const movieDateFormat = new Intl.DateTimeFormat('es-AR', {
+    dateStyle: 'medium', timeZone: 'America/Argentina/Buenos_Aires',
+});
 %>
 
 <main class="page">
@@ -26,7 +30,22 @@ const initials = String(user.user_name || user.user_username || '?').trim().spli
         </header>
 
         <section class="section" aria-labelledby="user-movies-heading">
-            <h2 class="section-title" id="user-movies-heading">Películas <span class="count"><%= movies.length %></span></h2>
+            <div class="profile-library-head">
+                <h2 class="section-title" id="user-movies-heading">Películas <span class="count"><%= totalMovies %></span></h2>
+                <% if (totalMovies > 1) { %>
+                    <form class="profile-sort" action="<%= profilePath %>" method="GET">
+                        <div class="field">
+                            <label for="profile-order">Ordenar películas</label>
+                            <select class="select" id="profile-order" name="orden">
+                                <option value="title" <%= order === 'title' ? 'selected' : '' %>>Título A–Z</option>
+                                <option value="rating" <%= order === 'rating' ? 'selected' : '' %>>Mejor puntuación</option>
+                                <option value="recent" <%= order === 'recent' ? 'selected' : '' %>>Más recientes</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-ghost btn-sm" type="submit">Aplicar</button>
+                    </form>
+                <% } %>
+            </div>
             <% if (movies.length === 0) { %>
                 <p class="empty">Este usuario todavía no guardó películas ni valoraciones.</p>
             <% } else { %>
@@ -49,11 +68,23 @@ const initials = String(user.user_name || user.user_username || '?').trim().spli
                                 <% if (movie.opinion) { %>
                                     <p class="quote">"<%= movie.opinion %>"</p>
                                 <% } %>
+                                <p class="profile-movie-date">
+                                    <% const interactionUpdated = new Date(movie.updated_at).getTime() !== new Date(movie.created_at).getTime(); %>
+                                    <%= interactionUpdated ? 'Actualizada' : 'Guardada' %>
+                                    <time datetime="<%= new Date(movie.updated_at).toISOString() %>"><%= movieDateFormat.format(new Date(movie.updated_at)) %></time>
+                                </p>
                                 <% if (isOwnProfile) { %><a class="interaction-edit" href="/pelicula/<%= movie.movie_id %>#rate-heading">Editar interacción →</a><% } %>
                             </div>
                         </li>
                     <% }); %>
                 </ul>
+            <% } %>
+            <% if (totalPages > 1) { %>
+                <nav class="pagination profile-pagination" aria-label="Páginas de películas">
+                    <% if (page > 1) { %><a class="btn btn-ghost" href="<%= profilePath %>?orden=<%= order %>&amp;page=<%= page - 1 %>">← Anterior</a><% } %>
+                    <span aria-current="page">Página <%= page %> de <%= totalPages %></span>
+                    <% if (page < totalPages) { %><a class="btn btn-ghost" href="<%= profilePath %>?orden=<%= order %>&amp;page=<%= page + 1 %>">Siguiente →</a><% } %>
+                </nav>
             <% } %>
         </section>
 

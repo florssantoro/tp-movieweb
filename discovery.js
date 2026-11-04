@@ -40,27 +40,41 @@ async function getTrending() {
 }
 
 const genres = [
-    { id: 27, name: 'Terror', description: 'Para mirar con la luz encendida.' },
-    { id: 18, name: 'Drama', description: 'Historias que se quedan con vos.' },
-    { id: 35, name: 'Comedia', description: 'Una buena excusa para reír.' },
-    { id: 28, name: 'Acción', description: 'Sin un minuto de respiro.' },
-    { id: 878, name: 'Ciencia ficción', description: 'Más allá de lo imaginable.' },
-    { id: 16, name: 'Animación', description: 'Otros mundos, grandes historias.' },
-    { id: 12, name: 'Aventura', description: 'Historias para salir de lo conocido.' },
-    { id: 80, name: 'Crimen', description: 'Casos, secretos y decisiones al límite.' },
-    { id: 99, name: 'Documental', description: 'Historias reales para mirar de cerca.' },
-    { id: 10751, name: 'Familia', description: 'Para compartir en cualquier edad.' },
-    { id: 14, name: 'Fantasía', description: 'Mundos donde todo puede pasar.' },
-    { id: 10769, name: 'Cine extranjero', description: 'Otras miradas, otros lugares.' },
-    { id: 36, name: 'Historia', description: 'El pasado vuelve a escena.' },
-    { id: 10402, name: 'Música', description: 'Ritmo, escenarios y grandes voces.' },
-    { id: 9648, name: 'Misterio', description: 'Nada es exactamente lo que parece.' },
-    { id: 10749, name: 'Romance', description: 'Encuentros que cambian una historia.' },
-    { id: 10770, name: 'Película de TV', description: 'Historias hechas para la pantalla chica.' },
-    { id: 53, name: 'Thriller', description: 'Tensión que no te deja respirar.' },
-    { id: 10752, name: 'Bélica', description: 'Conflictos que marcaron generaciones.' },
-    { id: 37, name: 'Western', description: 'Fronteras, polvo y ley.' },
+    { id: 27, name: 'Terror', aliases: ['horror'], description: 'Para mirar con la luz encendida.' },
+    { id: 18, name: 'Drama', aliases: [], description: 'Historias que se quedan con vos.' },
+    { id: 35, name: 'Comedia', aliases: ['comedy'], description: 'Una buena excusa para reír.' },
+    { id: 28, name: 'Acción', aliases: ['action'], description: 'Sin un minuto de respiro.' },
+    { id: 878, name: 'Ciencia ficción', aliases: ['science fiction', 'sci-fi'], description: 'Más allá de lo imaginable.' },
+    { id: 16, name: 'Animación', aliases: ['animation'], description: 'Otros mundos, grandes historias.' },
+    { id: 12, name: 'Aventura', aliases: ['adventure'], description: 'Historias para salir de lo conocido.' },
+    { id: 80, name: 'Crimen', aliases: ['crime'], description: 'Casos, secretos y decisiones al límite.' },
+    { id: 99, name: 'Documental', aliases: ['documentary'], description: 'Historias reales para mirar de cerca.' },
+    { id: 10751, name: 'Familia', aliases: ['familiar', 'family'], description: 'Para compartir en cualquier edad.' },
+    { id: 14, name: 'Fantasía', aliases: ['fantasy'], description: 'Mundos donde todo puede pasar.' },
+    { id: 10769, name: 'Cine extranjero', aliases: ['foreign'], description: 'Otras miradas, otros lugares.' },
+    { id: 36, name: 'Historia', aliases: ['histórica', 'history'], description: 'El pasado vuelve a escena.' },
+    { id: 10402, name: 'Música', aliases: ['musical', 'music'], description: 'Ritmo, escenarios y grandes voces.' },
+    { id: 9648, name: 'Misterio', aliases: ['mystery'], description: 'Nada es exactamente lo que parece.' },
+    { id: 10749, name: 'Romance', aliases: ['romántica'], description: 'Encuentros que cambian una historia.' },
+    { id: 10770, name: 'Película de TV', aliases: ['tv movie'], description: 'Historias hechas para la pantalla chica.' },
+    { id: 53, name: 'Thriller', aliases: ['suspenso'], description: 'Tensión que no te deja respirar.' },
+    { id: 10752, name: 'Bélica', aliases: ['guerra', 'war'], description: 'Conflictos que marcaron generaciones.' },
+    { id: 37, name: 'Western', aliases: ['oeste'], description: 'Fronteras, polvo y ley.' },
 ];
+
+const normalizeGenreTerm = (value) => String(value || '').normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+
+function findGenres(searchTerm) {
+    const needle = normalizeGenreTerm(searchTerm);
+    if (!needle) return [];
+
+    return genres.filter((genre) => [genre.name, ...genre.aliases].some((term) => {
+        const candidate = normalizeGenreTerm(term);
+        return candidate === needle
+            || (needle.length >= 3 && (candidate.includes(needle) || needle.includes(candidate)));
+    }));
+}
 
 function selectUniqueGenreFeatures(rows) {
     const candidatesByGenre = new Map();
@@ -146,9 +160,9 @@ function registerDiscovery(app, db, requireAuth) {
                 AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id = $1))
                 ORDER BY ${order === 'popular' ? 'm.popularity' : 'm.vote_average'} DESC NULLS LAST, m.movie_id
                 LIMIT 25 OFFSET $2`, [genre?.id || null, (page - 1) * 24]);
-            const query = new URLSearchParams({ orden: order });
-            if (genre) query.set('genero', genre.id);
-            res.render('explorar', { title: genre ? `Películas de ${genre.name.toLowerCase()}` : 'Mejor puntuadas', movies: cards(result.rows.slice(0,24)), genres, genre, order, page, hasNext: result.rows.length > 24, query: query.toString() });
+            const paginationQuery = new URLSearchParams({ orden: order });
+            if (genre) paginationQuery.set('genero', genre.id);
+            res.render('explorar', { title: genre ? `Películas de ${genre.name.toLowerCase()}` : 'Mejor puntuadas', movies: cards(result.rows.slice(0,24)), genres, genre, order, page, hasNext: result.rows.length > 24, paginationQuery: paginationQuery.toString() });
         } catch (error) { next(error); }
     });
     app.get('/que-ver', async (req, res, next) => {
@@ -168,4 +182,4 @@ function registerDiscovery(app, db, requireAuth) {
         } catch (error) { next(error); }
     });
 }
-module.exports = { registerDiscovery, loadTrending, getTrending, selectUniqueGenreFeatures };
+module.exports = { registerDiscovery, loadTrending, getTrending, selectUniqueGenreFeatures, genres, findGenres };

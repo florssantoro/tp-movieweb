@@ -14,8 +14,9 @@ const session = require('express-session');
 const PgSession = require('connect-pg-simple')(session);
 
 const { Pool } = require('pg');
-const { getTmdbMovie, getTmdbPoster } = require('./tmdb');
+const { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto } = require('./tmdb');
 const { logActivity, getTimeline, deleteUserActivity } = require('./activity');
+const { registerDiscovery, findGenres } = require('./discovery');
 
 const app = express();
 const port = process.env.PORT || 3500;
@@ -25,6 +26,7 @@ if (!sessionSecret) throw new Error('SESSION_SECRET es obligatorio en producció
 
 const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
 const validId = (value) => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number(value) <= 2147483647;
+const SEARCH_TYPES = new Set(['all', 'movie', 'actor', 'director', 'genre', 'keyword']);
 
 // Archivos estáticos (CSS, JS, imágenes). Las plantillas EJS quedan fuera de esta carpeta.
 app.use(express.static(path.join(__dirname, 'public')));
@@ -94,6 +96,16 @@ const requireAuth = (req, res, next) => {
     next();
 };
 
+// Evita que el historial restaure formularios de acceso después de iniciar sesión.
+app.use(['/login', '/registro'], (req, res, next) => {
+    res.set({
+        'Cache-Control': 'no-store',
+        Pragma: 'no-cache',
+        Expires: '0',
+    });
+    next();
+});
+
 const userValues = (body) => ({
     user_username: String(body.user_username || '').trim(),
     user_name: String(body.user_name || '').trim(),
@@ -120,22 +132,30 @@ const canComparePassword = (password) => Boolean(password) && password.length <=
 app.set('view engine', 'ejs');
 
 // Ruta para la página de inicio
-require('./discovery').registerDiscovery(app, db, requireAuth);
+registerDiscovery(app, db, requireAuth);
 
 // Ruta para buscar películas en la base de datos PostgreSQL
 app.get('/buscar', async (req, res) => {
     const searchTerm = String(req.query.q || '').trim();
+    const searchType = typeof req.query.tipo === 'string' && req.query.tipo ? req.query.tipo : 'all';
+    if (!SEARCH_TYPES.has(searchType)) return res.status(400).send('Tipo de búsqueda inválido.');
 
     if (!searchTerm) {
         return res.render('resultado', {
             movies: [],
+            genreMovies: [],
+            matchedGenres: [],
+            keywordMovies: [],
             actors: [],
             directors: [],
             emptySearch: true,
+            searchType,
         });
     }
 
     const value = [`%${escapeLikePattern(searchTerm)}%`];
+    const searches = (type) => searchType === 'all' || searchType === type;
+    const matchedGenres = searches('genre') ? findGenres(searchTerm) : [];
 
     const movieQuery = `
         SELECT movie_id, title
@@ -160,19 +180,57 @@ app.get('/buscar', async (req, res) => {
         ORDER BY person.person_name ASC
         LIMIT 50`;
 
+    const keywordMovieQuery = `
+        SELECT movie.movie_id, movie.title, movie.release_date,
+               STRING_AGG(DISTINCT keyword.keyword_name, ', ' ORDER BY keyword.keyword_name) AS keywords
+        FROM keyword
+        INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
+        INNER JOIN movie ON movie.movie_id = movie_keywords.movie_id
+        WHERE keyword.keyword_name ILIKE $1 ESCAPE '\\'
+        GROUP BY movie.movie_id, movie.title, movie.release_date, movie.vote_count, movie.vote_average
+        ORDER BY movie.vote_count DESC NULLS LAST, movie.vote_average DESC NULLS LAST, movie.title ASC
+        LIMIT 12`;
+
+    const genreMovieQuery = `
+        SELECT movie.movie_id, movie.title, movie.release_date,
+               ARRAY_AGG(DISTINCT movie_genres.genre_id ORDER BY movie_genres.genre_id) AS genre_ids
+        FROM movie_genres
+        INNER JOIN movie ON movie.movie_id = movie_genres.movie_id
+        WHERE movie_genres.genre_id = ANY($1::int[]) AND movie.vote_count >= 200
+        GROUP BY movie.movie_id, movie.title, movie.release_date, movie.vote_average, movie.vote_count
+        ORDER BY movie.vote_average DESC NULLS LAST, movie.vote_count DESC NULLS LAST, movie.title ASC
+        LIMIT 12`;
+
     try {
-        const [movies, actors, directors] = await Promise.all([
-            db.query(movieQuery, value),
-            db.query(actorQuery, value),
-            db.query(directorQuery, value)
+        const [movies, actors, directors, keywordMovies, genreMovies] = await Promise.all([
+            searches('movie') ? db.query(movieQuery, value) : Promise.resolve({ rows: [] }),
+            searches('actor') ? db.query(actorQuery, value) : Promise.resolve({ rows: [] }),
+            searches('director') ? db.query(directorQuery, value) : Promise.resolve({ rows: [] }),
+            searches('keyword') ? db.query(keywordMovieQuery, value) : Promise.resolve({ rows: [] }),
+            matchedGenres.length
+                ? db.query(genreMovieQuery, [matchedGenres.map((genre) => genre.id)])
+                : Promise.resolve({ rows: [] }),
         ]);
+        const directMovieIds = new Set(movies.rows.map((movie) => movie.movie_id));
+        const genreById = new Map(matchedGenres.map((genre) => [genre.id, genre.name]));
+        const filteredGenreMovies = genreMovies.rows
+            .filter((movie) => !directMovieIds.has(movie.movie_id))
+            .map((movie) => ({
+                ...movie,
+                genreNames: movie.genre_ids.map((genreId) => genreById.get(Number(genreId))).filter(Boolean).join(', '),
+            }));
+        const shownMovieIds = new Set([...directMovieIds, ...filteredGenreMovies.map((movie) => movie.movie_id)]);
 
         res.render('resultado', {
             movies: movies.rows,
+            genreMovies: filteredGenreMovies,
+            matchedGenres,
+            keywordMovies: keywordMovies.rows.filter((movie) => !shownMovieIds.has(movie.movie_id)),
             actors: actors.rows,
             directors: directors.rows,
             emptySearch: false,
-            query: searchTerm,
+            searchQuery: searchTerm,
+            searchType,
         });
     } catch (err) {
         console.error(err);
@@ -195,6 +253,20 @@ app.get('/poster/:id', async (req, res) => {
 
     res.set('Cache-Control', 'public, max-age=86400');
     res.redirect(posterUrl);
+});
+
+// La API key queda en el servidor; el navegador recibe solo una redirección a la imagen pública.
+app.get('/persona/:id/foto', async (req, res) => {
+    const personId = Number(req.params.id);
+    if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isInteger(personId) || personId > 2147483647) {
+        return res.status(400).send('ID de persona inválido.');
+    }
+
+    const photoUrl = await (app.locals.loadTmdbPersonPhoto || getTmdbPersonPhoto)(personId);
+    if (!photoUrl) return res.status(404).send('Foto no disponible.');
+
+    res.set('Cache-Control', 'public, max-age=86400');
+    res.redirect(photoUrl);
 });
 
 app.get('/pelicula/:id', async (req, res) => {
@@ -381,50 +453,11 @@ app.get('/director/:id', async (req, res) => {
     }
 });
 
-// Página del buscador de palabras clave
-app.get('/keyword', (req, res) => {
-    res.render('search_keyword');
-});
-
-// Ruta para buscar películas por palabra clave (PostgreSQL)
-app.get('/keyword/resultados', async (req, res) => {
-    const searchTerm = String(req.query.q || '').trim();
-
-    if (!searchTerm) {
-        return res.render('resultados_keyword', {
-            searchTerm,
-            movies: [],
-            emptySearch: true,
-        });
-    }
-
-    const moviesQuery = `
-      SELECT
-        movie.movie_id,
-        movie.title,
-        movie.release_date,
-        STRING_AGG(DISTINCT keyword.keyword_name, ', ' ORDER BY keyword.keyword_name) AS keywords
-      FROM keyword
-      INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
-      INNER JOIN movie ON movie.movie_id = movie_keywords.movie_id
-      WHERE keyword.keyword_name ILIKE $1 ESCAPE '\\'
-      GROUP BY movie.movie_id, movie.title, movie.release_date
-      ORDER BY movie.title ASC
-      LIMIT 100
-    `;
-
-    try {
-        const result = await db.query(moviesQuery, [`%${escapeLikePattern(searchTerm)}%`]);
-
-        res.render('resultados_keyword', {
-            searchTerm,
-            movies: result.rows,
-            emptySearch: false,
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error en la búsqueda por palabra clave.');
-    }
+// Las URLs anteriores siguen funcionando, pero convergen en el buscador único.
+app.get('/keyword', (req, res) => res.redirect('/buscar?tipo=keyword'));
+app.get('/keyword/resultados', (req, res) => {
+    const searchTerm = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    res.redirect(searchTerm ? `/buscar?tipo=keyword&q=${encodeURIComponent(searchTerm)}` : '/buscar?tipo=keyword');
 });
 
 app.get('/registro', (req, res) => {
@@ -510,19 +543,41 @@ app.post('/logout', requireAuth, (req, res) => {
     });
 });
 
-const renderUserProfile = async (res, user, isOwnProfile) => {
+const PROFILE_PAGE_SIZE = 20;
+const PROFILE_ORDERS = {
+    title: 'movie.title ASC, movie.movie_id ASC',
+    rating: 'movie_user.rating DESC NULLS LAST, movie.title ASC, movie.movie_id ASC',
+    recent: 'movie_user.updated_at DESC, movie.movie_id DESC',
+};
+
+const renderUserProfile = async (req, res, user, isOwnProfile) => {
     const userId = user.user_id;
+    const order = typeof req.query.orden === 'string' ? req.query.orden : 'title';
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    if (!Object.hasOwn(PROFILE_ORDERS, order) || !Number.isInteger(page) || page < 1 || page > 500) {
+        return res.status(400).send('Filtros de perfil inválidos.');
+    }
+
     const moviesQuery = `
       SELECT movie.movie_id, movie.title, movie.release_date,
-             movie_user.rating, movie_user.opinion, movie_user.is_favorite, movie_user.watch_status
+             movie_user.rating, movie_user.opinion, movie_user.is_favorite, movie_user.watch_status,
+             movie_user.created_at, movie_user.updated_at
       FROM movie_user
       INNER JOIN movie ON movie.movie_id = movie_user.movie_id
       WHERE movie_user.user_id = $1
-      ORDER BY movie.title ASC
+      ORDER BY ${PROFILE_ORDERS[order]}
+      LIMIT $2 OFFSET $3
     `;
 
     try {
-        const moviesResult = await db.query(moviesQuery, [userId]);
+        const totalResult = await db.query('SELECT count(*)::int AS count FROM movie_user WHERE user_id = $1', [userId]);
+        const totalMovies = totalResult.rows[0].count;
+        const totalPages = Math.max(1, Math.ceil(totalMovies / PROFILE_PAGE_SIZE));
+        if (page > totalPages) {
+            const profilePath = isOwnProfile ? '/perfil' : `/usuarios/${userId}`;
+            return res.redirect(`${profilePath}?orden=${order}&page=${totalPages}`);
+        }
+        const moviesResult = await db.query(moviesQuery, [userId, PROFILE_PAGE_SIZE, (page - 1) * PROFILE_PAGE_SIZE]);
 
         // El timeline viene de MongoDB. Si no está disponible, el perfil se muestra igual.
         let activity = [];
@@ -534,7 +589,17 @@ const renderUserProfile = async (res, user, isOwnProfile) => {
             console.warn('No se pudo leer la actividad de MongoDB:', err.message);
         }
 
-        res.render('usuario', { user, movies: moviesResult.rows, isOwnProfile, activity, activityAvailable });
+        res.render('usuario', {
+            user,
+            movies: moviesResult.rows,
+            totalMovies,
+            isOwnProfile,
+            activity,
+            activityAvailable,
+            order,
+            page,
+            totalPages,
+        });
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar el perfil del usuario.');
@@ -542,7 +607,7 @@ const renderUserProfile = async (res, user, isOwnProfile) => {
 };
 
 app.get('/perfil', requireAuth, async (req, res) => {
-    await renderUserProfile(res, res.locals.currentUser, true);
+    await renderUserProfile(req, res, res.locals.currentUser, true);
 });
 
 app.get('/perfil/editar', requireAuth, (req, res) => {
@@ -634,7 +699,7 @@ app.get('/usuarios/:id', async (req, res) => {
         const result = await db.query('SELECT user_id, user_username, user_name FROM users WHERE user_id = $1', [Number(req.params.id)]);
         if (result.rows.length === 0) return res.status(404).send('Usuario no encontrado.');
         const isOwnProfile = res.locals.currentUser?.user_id === result.rows[0].user_id;
-        await renderUserProfile(res, isOwnProfile ? res.locals.currentUser : result.rows[0], isOwnProfile);
+        await renderUserProfile(req, res, isOwnProfile ? res.locals.currentUser : result.rows[0], isOwnProfile);
     } catch (err) {
         console.error(err);
         res.status(500).send('Error al cargar el perfil del usuario.');

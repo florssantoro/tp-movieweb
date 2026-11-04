@@ -7,6 +7,7 @@ const { app, db } = require('../app');
 
 let baseUrl;
 let server;
+const initialsForTest = (name) => String(name).trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
 
 before(async () => {
     server = app.listen(0);
@@ -24,6 +25,7 @@ after(async () => {
 afterEach(() => {
     delete app.locals.loadTmdbMovie;
     delete app.locals.loadTmdbPoster;
+    delete app.locals.loadTmdbPersonPhoto;
     delete app.locals.loadRatingUsers;
     delete app.locals.deleteUserActivity;
 });
@@ -50,8 +52,8 @@ test('empty search shows guidance without result sections', async () => {
     const body = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(body, /Ingresá una película, actor o director/);
-    assert.doesNotMatch(body, /<h2>Películas<\/h2>/);
+    assert.match(body, /Ingresá una película, persona o tema/);
+    assert.doesNotMatch(body, /id="movies-heading"/);
 });
 
 test('SQL wildcard characters are searched as literal text', async () => {
@@ -64,43 +66,82 @@ test('SQL wildcard characters are searched as literal text', async () => {
     }
 });
 
-test('keyword search page links to keyword results', async () => {
-    const response = await fetch(`${baseUrl}/keyword`);
-    const body = await response.text();
-
-    assert.equal(response.status, 200);
-    assert.match(body, /action="\/keyword\/resultados"/);
-});
-
-test('keyword search lists related movies with matching keywords', async () => {
+test('unified search lists movies related by keyword without duplicating direct title matches', async () => {
     const keyword = await db.query(`
         SELECT keyword.keyword_name, movie.movie_id
         FROM keyword
         INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
         INNER JOIN movie ON movie.movie_id = movie_keywords.movie_id
+        WHERE movie.title NOT ILIKE '%' || keyword.keyword_name || '%'
+        ORDER BY movie.vote_count DESC NULLS LAST, movie.vote_average DESC NULLS LAST
         LIMIT 1
     `);
     assert.ok(keyword.rows.length > 0, 'La base debe contener al menos una película con palabra clave.');
     const { keyword_name: keywordName, movie_id: movieId } = keyword.rows[0];
 
-    const response = await fetch(`${baseUrl}/keyword/resultados?q=${encodeURIComponent(keywordName)}`);
+    const response = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent(keywordName)}`);
     const body = await response.text();
 
     assert.equal(response.status, 200);
-    assert.match(body, new RegExp(`href="/pelicula/${movieId}"`));
-    assert.match(body, /<strong>Palabras clave:<\/strong>/);
+    assert.match(body, /Películas relacionadas/);
+    assert.match(body, /class="tile tile-related"/);
+    assert.match(body, /aria-label="Tema relacionado:/);
+    assert.match(body, new RegExp(`src="/poster/${movieId}"`));
+    assert.equal((body.match(new RegExp(`href="/pelicula/${movieId}"`, 'g')) || []).length, 1);
+
+    const filtered = await fetch(`${baseUrl}/buscar?tipo=keyword&q=${encodeURIComponent(keywordName)}`);
+    const filteredBody = await filtered.text();
+    assert.equal(filtered.status, 200);
+    assert.match(filteredBody, /id="keyword-movies-heading"/);
+    assert.doesNotMatch(filteredBody, /id="movies-heading"|id="actors-heading"|id="directors-heading"/);
 });
 
-test('keyword search handles empty, unmatched and wildcard queries', async () => {
-    const empty = await fetch(`${baseUrl}/keyword/resultados?q=%20`);
-    assert.equal(empty.status, 200);
-    assert.match(await empty.text(), /Ingresá una palabra clave/);
+test('unified search recognizes genres and close Spanish terms', async () => {
+    for (const query of ['drama', 'dramático']) {
+        const response = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent(query)}`);
+        const body = await response.text();
 
-    const unmatched = await fetch(`${baseUrl}/keyword/resultados?q=zzzz-no-existe-zzzz`);
+        assert.equal(response.status, 200);
+        assert.match(body, /Películas de Drama/);
+        assert.match(body, /class="tile tile-related"/);
+        assert.match(body, /aria-label="Género: Drama"/);
+        assert.match(body, /href="\/explorar\?genero=18"/);
+    }
+});
+
+test('search category selector limits results to the selected source', async () => {
+    const actor = await fetch(`${baseUrl}/buscar?tipo=actor&q=${encodeURIComponent('Morgan Freeman')}`);
+    const actorBody = await actor.text();
+    assert.equal(actor.status, 200);
+    assert.match(actorBody, /id="actors-heading"/);
+    assert.match(actorBody, /<option value="actor" selected>Actores<\/option>/);
+    assert.doesNotMatch(actorBody, /id="directors-heading"|id="movies-heading"/);
+
+    const genre = await fetch(`${baseUrl}/buscar?tipo=genre&q=drama`);
+    const genreBody = await genre.text();
+    assert.equal(genre.status, 200);
+    assert.match(genreBody, /Películas de Drama/);
+    assert.doesNotMatch(genreBody, /id="keyword-movies-heading"/);
+
+    assert.equal((await fetch(`${baseUrl}/buscar?tipo=desconocido&q=drama`)).status, 400);
+});
+
+test('legacy keyword routes redirect to the unified search', async () => {
+    const form = await fetch(`${baseUrl}/keyword`, { redirect: 'manual' });
+    assert.equal(form.status, 302);
+    assert.equal(form.headers.get('location'), '/buscar?tipo=keyword');
+
+    const results = await fetch(`${baseUrl}/keyword/resultados?q=${encodeURIComponent('space travel')}`, { redirect: 'manual' });
+    assert.equal(results.status, 302);
+    assert.equal(results.headers.get('location'), '/buscar?tipo=keyword&q=space%20travel');
+});
+
+test('unified search handles unmatched and wildcard queries', async () => {
+    const unmatched = await fetch(`${baseUrl}/buscar?q=zzzz-no-existe-zzzz`);
     assert.equal(unmatched.status, 200);
-    assert.match(await unmatched.text(), /No se encontraron películas/);
+    assert.match(await unmatched.text(), /No encontramos coincidencias/);
 
-    const wildcard = await fetch(`${baseUrl}/keyword/resultados?q=${encodeURIComponent('%')}`);
+    const wildcard = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent('%')}`);
     assert.equal(wildcard.status, 200);
     assert.doesNotMatch(await wildcard.text(), /href="\/pelicula\//);
 });
@@ -120,6 +161,7 @@ test('actor profile includes films and character roles', async () => {
     assert.equal(response.status, 200);
     assert.match(body, /<strong>Personaje:<\/strong>/);
     assert.match(body, /href="\/pelicula\/\d+"/);
+    assert.match(body, new RegExp(`src="/persona/${actor.rows[0].person_id}/foto"`));
 });
 
 test('director profile includes films and role', async () => {
@@ -137,6 +179,7 @@ test('director profile includes films and role', async () => {
     assert.equal(response.status, 200);
     assert.match(body, /<strong>Rol:<\/strong> Director/);
     assert.match(body, /href="\/pelicula\/\d+"/);
+    assert.match(body, new RegExp(`src="/persona/${director.rows[0].person_id}/foto"`));
 });
 
 test('person profile routes validate IDs and missing records', async () => {
@@ -210,7 +253,27 @@ test('search results load movie posters through the poster route', async () => {
     const body = await response.text();
 
     assert.equal(response.status, 200);
+    assert.match(body, /name="q" value="Star Wars"/);
+    assert.match(body, /Resultados para &#34;Star Wars&#34;/);
     assert.match(body, /src="\/poster\/11"/);
+});
+
+test('person search results request TMDB photos while keeping initials as fallback', async () => {
+    const person = await db.query(`
+        SELECT person.person_id, person.person_name
+        FROM person
+        INNER JOIN movie_cast ON movie_cast.person_id = person.person_id
+        ORDER BY person.person_id
+        LIMIT 1
+    `);
+    const { person_id: personId, person_name: personName } = person.rows[0];
+    const response = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent(personName)}`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.match(body, new RegExp(`src="/persona/${personId}/foto"`));
+    assert.match(body, /class="avatar-photo"/);
+    assert.match(body, new RegExp(initialsForTest(personName)));
 });
 
 test('poster route redirects to TMDB and handles missing or invalid posters', async () => {
@@ -225,6 +288,17 @@ test('poster route redirects to TMDB and handles missing or invalid posters', as
 
     const invalid = await fetch(`${baseUrl}/poster/abc`, { redirect: 'manual' });
     assert.equal(invalid.status, 400);
+});
+
+test('person photo route redirects to TMDB and handles missing or invalid photos', async () => {
+    app.locals.loadTmdbPersonPhoto = async (personId) => (personId === 192 ? 'https://image.tmdb.org/t/p/w185/profile.jpg' : null);
+
+    const found = await fetch(`${baseUrl}/persona/192/foto`, { redirect: 'manual' });
+    assert.equal(found.status, 302);
+    assert.equal(found.headers.get('location'), 'https://image.tmdb.org/t/p/w185/profile.jpg');
+
+    assert.equal((await fetch(`${baseUrl}/persona/193/foto`)).status, 404);
+    assert.equal((await fetch(`${baseUrl}/persona/abc/foto`)).status, 400);
 });
 
 test('movie detail remains available when user tables are unavailable', async () => {
@@ -248,6 +322,12 @@ test('users can register, log in, edit their own profile and delete their accoun
     let deletedActivityUserId;
 
     try {
+        for (const route of ['/login', '/registro']) {
+            const authPage = await fetch(`${baseUrl}${route}`);
+            assert.equal(authPage.status, 200);
+            assert.match(authPage.headers.get('cache-control') || '', /no-store/);
+        }
+
         const protectedProfile = await fetch(`${baseUrl}/perfil`, { redirect: 'manual' });
         assert.equal(protectedProfile.status, 302);
         assert.equal(protectedProfile.headers.get('location'), '/login');
@@ -260,6 +340,13 @@ test('users can register, log in, edit their own profile and delete their accoun
         assert.equal(created.status, 302);
         assert.equal(created.headers.get('location'), '/perfil');
         const cookie = created.headers.get('set-cookie').split(';')[0];
+
+        for (const route of ['/login', '/registro']) {
+            const authenticatedAuthPage = await fetch(`${baseUrl}${route}`, { redirect: 'manual', headers: { cookie } });
+            assert.equal(authenticatedAuthPage.status, 302);
+            assert.equal(authenticatedAuthPage.headers.get('location'), '/perfil');
+            assert.match(authenticatedAuthPage.headers.get('cache-control') || '', /no-store/);
+        }
 
         const duplicate = await fetch(`${baseUrl}/registro`, {
             method: 'POST',
