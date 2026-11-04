@@ -40,25 +40,25 @@ test('Unicode repair migration decodes damaged data without changing valid names
         await client.query(migration);
         await client.query(migration);
 
-        assert.deepEqual((await client.query(`SELECT language_name FROM ${schema}.language ORDER BY language_name`)).rows, [
+        assert.deepEqual((await client.query(`SELECT language_name FROM ${schema}.language ORDER BY language_name COLLATE "C"`)).rows, [
             { language_name: 'Español' },
             { language_name: '日本語' },
             { language_name: '한국' },
         ]);
-        assert.deepEqual((await client.query(`SELECT person_name FROM ${schema}.person ORDER BY person_name`)).rows, [
+        assert.deepEqual((await client.query(`SELECT person_name FROM ${schema}.person ORDER BY person_name COLLATE "C"`)).rows, [
             { person_name: 'Art Chudabala' },
             { person_name: 'Björk' },
             { person_name: '张立 | Zhang Li' },
         ]);
-        assert.deepEqual((await client.query(`SELECT character_name FROM ${schema}.movie_cast ORDER BY character_name`)).rows, [
+        assert.deepEqual((await client.query(`SELECT character_name FROM ${schema}.movie_cast ORDER BY character_name COLLATE "C"`)).rows, [
             { character_name: 'Evelyn O’Connell' },
             { character_name: '김휘 (Kim Hwi)' },
         ]);
-        assert.deepEqual((await client.query(`SELECT company_name FROM ${schema}.production_company ORDER BY company_name`)).rows, [
+        assert.deepEqual((await client.query(`SELECT company_name FROM ${schema}.production_company ORDER BY company_name COLLATE "C"`)).rows, [
             { company_name: 'Clubdeal' },
             { company_name: 'France 2 Cinéma' },
         ]);
-        assert.deepEqual((await client.query(`SELECT keyword_name FROM ${schema}.keyword ORDER BY keyword_name`)).rows, [
+        assert.deepEqual((await client.query(`SELECT keyword_name FROM ${schema}.keyword ORDER BY keyword_name COLLATE "C"`)).rows, [
             { keyword_name: "côte d'azur" },
             { keyword_name: '绝地奶霸' },
         ]);
