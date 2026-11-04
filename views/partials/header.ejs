@@ -5,13 +5,6 @@
             <a href="/explorar">Explorar</a>
             <a href="/que-ver">¿Qué ver?</a>
             <a href="/mi-lista">Mi lista</a>
-            <% if (locals.currentUser) { %>
-                <a href="/perfil">Perfil</a>
-                <form class="nav-form" action="/logout" method="POST"><button type="submit">Salir</button></form>
-            <% } else { %>
-                <a href="/login">Ingresar</a>
-                <a href="/registro">Crear cuenta</a>
-            <% } %>
         </nav>
         <% if (locals.showSearch !== false) { %>
             <form class="header-search" action="/buscar" method="GET" role="search">
@@ -28,6 +21,38 @@
                     <button type="submit" aria-label="Buscar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m16 16 5 5"></path></svg></button>
                 </div>
             </form>
+        <% } %>
+        <% if (locals.currentUser) { %>
+            <% const accountInitials = String(currentUser.user_name || currentUser.user_username || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase(); %>
+            <details class="account-menu">
+                <summary class="account-trigger" aria-label="Tu cuenta: <%= currentUser.user_username %>">
+                    <span class="account-avatar" aria-hidden="true"><%= accountInitials %></span>
+                    <span class="account-name"><%= currentUser.user_username %></span>
+                    <svg class="account-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+                </summary>
+                <div class="account-panel">
+                    <p class="account-who">Conectado como<strong><%= currentUser.user_name || currentUser.user_username %></strong><span><%= currentUser.user_email %></span></p>
+                    <a href="/perfil">Mi perfil</a>
+                    <a href="/mi-lista">Mi lista</a>
+                    <a href="/perfil/editar">Editar perfil</a>
+                    <form action="/logout" method="POST"><button type="submit">Salir</button></form>
+                </div>
+            </details>
+            <script>
+                // Cierra el menú de la cuenta al hacer clic afuera o con Escape.
+                (() => {
+                    const menu = document.currentScript.previousElementSibling;
+                    document.addEventListener('click', (event) => { if (menu.open && !menu.contains(event.target)) menu.open = false; });
+                    document.addEventListener('keydown', (event) => {
+                        if (event.key === 'Escape' && menu.open) { menu.open = false; menu.querySelector('summary').focus(); }
+                    });
+                })();
+            </script>
+        <% } else { %>
+            <div class="account-actions">
+                <a class="btn btn-ghost btn-sm account-login" href="/login"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Ingresar</a>
+                <a class="btn btn-sm account-register" href="/registro">Crear cuenta</a>
+            </div>
         <% } %>
     </div>
 </header>
