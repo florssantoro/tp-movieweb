@@ -11,16 +11,19 @@ function getCollection() {
     if (!process.env.MONGO_URL) return Promise.resolve(null);
 
     if (!collectionPromise) {
-        client = new MongoClient(process.env.MONGO_URL, { serverSelectionTimeoutMS: 2000 });
-        collectionPromise = client.connect()
+        const attempt = new MongoClient(process.env.MONGO_URL, { serverSelectionTimeoutMS: 2000 });
+        client = attempt;
+        collectionPromise = attempt.connect()
             .then(async () => {
-                const collection = client.db(process.env.MONGO_DB || 'movieweb').collection('user_activity');
+                const collection = attempt.db(process.env.MONGO_DB || 'movieweb').collection('user_activity');
                 await collection.createIndex({ userId: 1, timestamp: -1 });
                 return collection;
             })
-            .catch((err) => {
-                // Si falla, la próxima llamada vuelve a intentar conectarse.
+            .catch(async (err) => {
+                // Si falla, se cierra este cliente y la próxima llamada vuelve a intentar conectarse.
                 collectionPromise = null;
+                if (client === attempt) client = null;
+                await attempt.close().catch(() => {});
                 throw err;
             });
     }

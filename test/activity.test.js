@@ -124,6 +124,18 @@ test('profile shows an empty timeline message when there is no activity', async 
     assert.match(body, /Todavía no hay actividad/);
 });
 
+test('a failed activity event does not prevent the remaining events from being logged', async () => {
+    app.locals.logActivity = async (eventUserId, type, details) => {
+        if (type === 'ADDED_TO_FAVORITES') throw new Error('MongoDB caído');
+        loggedEvents.push({ userId: eventUserId, type, details });
+    };
+
+    await withoutWarnings(async () => {
+        assert.equal((await post({ is_favorite: 'on', rating: '4', opinion: 'Gran película' })).status, 302);
+    });
+    assert.deepEqual(takeEventTypes(), ['RATED_MOVIE', 'WROTE_REVIEW']);
+});
+
 test('interactions and profiles keep working when MongoDB is unavailable', async () => {
     app.locals.logActivity = async () => { throw new Error('MongoDB caído'); };
     app.locals.getTimeline = async () => { throw new Error('MongoDB caído'); };

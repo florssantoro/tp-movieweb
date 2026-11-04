@@ -28,6 +28,23 @@ afterEach(() => {
     delete app.locals.deleteUserActivity;
 });
 
+test('static assets are served but EJS templates are not', async () => {
+    for (const asset of ['/styles.css', '/discovery.css', '/discovery-ui.js', '/tmdb-logo.svg']) {
+        assert.equal((await fetch(`${baseUrl}${asset}`)).status, 200, asset);
+    }
+    for (const template of ['/pelicula.ejs', '/partials/header.ejs']) {
+        assert.equal((await fetch(`${baseUrl}${template}`)).status, 404, template);
+    }
+});
+
+test('person pages reject IDs outside the integer range', async () => {
+    for (const route of ['actor', 'director']) {
+        for (const id of ['99999999999', '1e3', '0', 'abc']) {
+            assert.equal((await fetch(`${baseUrl}/${route}/${id}`)).status, 400, `${route}/${id}`);
+        }
+    }
+});
+
 test('empty search shows guidance without result sections', async () => {
     const response = await fetch(`${baseUrl}/buscar?q=%20%20`);
     const body = await response.text();

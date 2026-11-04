@@ -7,9 +7,11 @@
 
 require('dotenv').config();
 
+const path = require('path');
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const session = require('express-session');
+const PgSession = require('connect-pg-simple')(session);
 
 const { Pool } = require('pg');
 const { getTmdbMovie, getTmdbPoster } = require('./tmdb');
@@ -24,23 +26,8 @@ if (!sessionSecret) throw new Error('SESSION_SECRET es obligatorio en producció
 const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
 const validId = (value) => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number(value) <= 2147483647;
 
-// Serve static files from the "views" directory
-app.use(express.static('views'));
-
-// Permite leer los datos enviados por formularios (req.body)
-app.use(express.urlencoded({ extended: false }));
-app.use(session({
-    name: 'movieweb.sid',
-    secret: sessionSecret,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        httpOnly: true,
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-    },
-}));
+// Archivos estáticos (CSS, JS, imágenes). Las plantillas EJS quedan fuera de esta carpeta.
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Crear un "pool" de conexiones a PostgreSQL usando las variables de entorno
 const db = new Pool({
@@ -51,6 +38,23 @@ const db = new Pool({
     port: process.env.DB_PORT,
     options: `-c search_path=movies,public`, //modificar options de acuerdo al nombre del esquema
 });
+
+// Permite leer los datos enviados por formularios (req.body)
+app.use(express.urlencoded({ extended: false }));
+// Las sesiones se guardan en PostgreSQL (tabla movies.session) para que sobrevivan a un reinicio.
+app.use(session({
+    name: 'movieweb.sid',
+    secret: sessionSecret,
+    store: new PgSession({ pool: db, schemaName: 'movies', tableName: 'session', createTableIfMissing: true }),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+}));
 
 async function loadRatingUsers() {
     const tables = await db.query(`
@@ -284,7 +288,7 @@ app.get('/pelicula/:id', async (req, res) => {
 app.get('/actor/:id', async (req, res) => {
     const actorId = Number(req.params.id);
 
-    if (!Number.isInteger(actorId) || actorId <= 0) {
+    if (!validId(req.params.id)) {
         return res.status(400).send('ID de actor inválido.');
     }
 
@@ -335,7 +339,7 @@ app.get('/actor/:id', async (req, res) => {
 app.get('/director/:id', async (req, res) => {
     const directorId = Number(req.params.id);
 
-    if (!Number.isInteger(directorId) || directorId <= 0) {
+    if (!validId(req.params.id)) {
         return res.status(400).send('ID de director inválido.');
     }
 
@@ -449,7 +453,11 @@ app.post('/registro', async (req, res) => {
         req.session.regenerate((err) => {
             if (err) return res.status(500).send('Error al iniciar la sesión.');
             req.session.userId = result.rows[0].user_id;
-            res.redirect('/perfil');
+            // Guarda la sesión antes de redirigir, para que el pedido siguiente ya la encuentre.
+            req.session.save((saveErr) => {
+                if (saveErr) return res.status(500).send('Error al iniciar la sesión.');
+                res.redirect('/perfil');
+            });
         });
     } catch (err) {
         if (err.code === '23505') {
@@ -482,7 +490,11 @@ app.post('/login', async (req, res) => {
         req.session.regenerate((err) => {
             if (err) return res.status(500).send('Error al iniciar la sesión.');
             req.session.userId = user.user_id;
-            res.redirect('/perfil');
+            // Guarda la sesión antes de redirigir, para que el pedido siguiente ya la encuentre.
+            req.session.save((saveErr) => {
+                if (saveErr) return res.status(500).send('Error al iniciar la sesión.');
+                res.redirect('/perfil');
+            });
         });
     } catch (err) {
         console.error(err);
@@ -651,15 +663,16 @@ async function recordActivity(userId, movieId, before, after) {
     }
     if (events.length === 0) return;
 
-    try {
-        const movie = await db.query('SELECT title FROM movie WHERE movie_id = $1', [movieId]);
-        const movieTitle = movie.rows[0]?.title || null;
-        for (const event of events) {
+    const movie = await db.query('SELECT title FROM movie WHERE movie_id = $1', [movieId]).catch(() => null);
+    const movieTitle = movie?.rows[0]?.title || null;
+    // Cada evento se registra por separado: si uno falla, los demás igual se guardan.
+    for (const event of events) {
+        try {
             await (app.locals.logActivity || logActivity)(userId, event.type, { movieId, movieTitle, ...event.extra });
+        } catch (err) {
+            // Si MongoDB no está disponible, la interacción ya quedó guardada en PostgreSQL.
+            console.warn('No se pudo registrar la actividad en MongoDB:', err.message);
         }
-    } catch (err) {
-        // Si MongoDB no está disponible, la interacción ya quedó guardada en PostgreSQL.
-        console.warn('No se pudo registrar la actividad en MongoDB:', err.message);
     }
 }
 
