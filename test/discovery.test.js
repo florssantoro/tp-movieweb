@@ -91,7 +91,7 @@ test('a TMDB-only movie can be viewed without writes then saved in the authentic
     assert.match(list,/Discovery fixture/);
     const savedDetail = await (await fetch(`${base}/pelicula/${remoteId}`,{headers:{cookie}})).text();
     assert.match(savedDetail,/100 min/);
-    assert.match(savedDetail,/value="want_to_watch" selected/);
+    assert.match(savedDetail,/action-want" type="submit" aria-pressed="true"/);
 });
 test('trending handles unavailable API and rejects adult or invalid entries', async () => {
     assert.deepEqual(await loadTrending({apiKey:''}),[]);
@@ -124,4 +124,31 @@ test('suggestions show 24 movies per page and keep the selected mood when paging
     for (const page of ['0', '-1', '1.5', 'abc', '501']) {
         assert.equal((await fetch(`${base}/que-ver?page=${page}`)).status, 400, `page=${page}`);
     }
+});
+
+test('explore page shows the total, instant filters and page count', async () => {
+    const total = (await db.query('SELECT COUNT(*)::int AS n FROM movie WHERE vote_count >= 200')).rows[0].n;
+    const html = await (await fetch(`${base}/explorar`)).text();
+    assert.match(html, /<h1>Todo el catálogo<\/h1>/);
+    assert.ok(html.includes(`${total.toLocaleString('es-AR')} películas con al menos 200 votos`));
+    assert.match(html, /href="\/explorar" aria-current="page">Mejor puntuadas/);
+    assert.match(html, /href="\/explorar" aria-current="page">Todos/);
+    assert.ok(html.includes(`Página <strong>1</strong> de ${Math.ceil(total / 24)}`));
+    assert.doesNotMatch(html, /← Inicio/);
+
+    const popularHorror = await (await fetch(`${base}/explorar?genero=27&orden=popular`)).text();
+    assert.match(popularHorror, /<h1>Películas de terror<\/h1>/);
+    assert.match(popularHorror, /ordenadas por popularidad/);
+    assert.match(popularHorror, /href="\/explorar\?genero=27&amp;orden=popular" aria-current="page">Terror/);
+    assert.match(popularHorror, /href="\/explorar\?orden=popular" aria-current="page">Todos|href="\/explorar\?orden=popular" >Todos/);
+    assert.match(popularHorror, /href="\/explorar\?genero=27" >Mejor puntuadas/, 'cambiar el orden mantiene el género');
+});
+
+test('suggestions page shows how many movies there are and the page count', async () => {
+    const total = (await db.query('SELECT COUNT(*)::int AS n FROM movie WHERE vote_count >= 200 AND runtime BETWEEN 1 AND 100')).rows[0].n;
+    const html = await (await fetch(`${base}/que-ver?animo=corta`)).text();
+    assert.doesNotMatch(html, /← Inicio/);
+    assert.ok(html.includes(`${total.toLocaleString('es-AR')} películas para elegir`));
+    assert.ok(html.includes(`Página <strong>1</strong> de ${Math.ceil(total / 24)}`));
+    assert.match(html, /href="\/que-ver\?animo=corta" aria-current="page">Hasta 100 minutos/);
 });

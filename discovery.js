@@ -113,18 +113,24 @@ function selectUniqueGenreFeatures(rows) {
 function registerDiscovery(app, db, requireAuth) {
     const cards = (rows) => rows.map((m) => ({ ...m, posterUrl: `/poster/${m.movie_id}` }));
     // limit y offset permiten paginar en /que-ver; la portada usa los 6 primeros.
-    async function suggestions(userId, mood = '', { limit = 6, offset = 0 } = {}) {
-        const moodGenre = { terror: 27, comedia: 35, drama: 18 }[mood] || null;
-        const result = await db.query(`SELECT m.* FROM movie m
-            WHERE m.vote_count >= 200
+    // Filtros de las sugerencias: $1 usuario, $2 género del ánimo, $3 solo películas cortas.
+    const suggestionFilter = `m.vote_count >= 200
             AND ($2::int IS NULL OR EXISTS (SELECT 1 FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id = $2))
             AND ($3::boolean = FALSE OR m.runtime BETWEEN 1 AND 100)
-            AND NOT EXISTS (SELECT 1 FROM movie_user u WHERE u.movie_id = m.movie_id AND u.user_id = $1 AND u.watch_status = 'watched')
+            AND NOT EXISTS (SELECT 1 FROM movie_user u WHERE u.movie_id = m.movie_id AND u.user_id = $1 AND u.watch_status = 'watched')`;
+    const suggestionParams = (userId, mood) => [userId || null, { terror: 27, comedia: 35, drama: 18 }[mood] || null, mood === 'corta'];
+    async function countSuggestions(userId, mood = '') {
+        const result = await db.query(`SELECT COUNT(*)::int AS total FROM movie m WHERE ${suggestionFilter}`, suggestionParams(userId, mood));
+        return result.rows[0].total;
+    }
+    async function suggestions(userId, mood = '', { limit = 6, offset = 0 } = {}) {
+        const result = await db.query(`SELECT m.* FROM movie m
+            WHERE ${suggestionFilter}
             ORDER BY (SELECT count(*) FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id IN
                 (SELECT mg.genre_id FROM movie_genres mg JOIN movie_user u ON u.movie_id = mg.movie_id
                  WHERE u.user_id = $1 AND (u.is_favorite OR u.rating >= 4))) DESC,
                 m.vote_average DESC NULLS LAST, m.vote_count DESC, m.movie_id
-            LIMIT $4 OFFSET $5`, [userId || null, moodGenre, mood === 'corta', limit, offset]);
+            LIMIT $4 OFFSET $5`, [...suggestionParams(userId, mood), limit, offset]);
         return cards(result.rows);
     }
     app.get('/', async (req, res, next) => {
@@ -157,13 +163,18 @@ function registerDiscovery(app, db, requireAuth) {
         const order = req.query.orden || 'rating';
         if (!Number.isInteger(page) || page < 1 || page > 500 || (req.query.genero && !genre) || !['rating', 'popular'].includes(order)) return res.status(400).send('Filtros inválidos.');
         try {
-            const result = await db.query(`SELECT m.* FROM movie m WHERE m.vote_count >= 200
-                AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id = $1))
-                ORDER BY ${order === 'popular' ? 'm.popularity' : 'm.vote_average'} DESC NULLS LAST, m.movie_id
-                LIMIT 25 OFFSET $2`, [genre?.id || null, (page - 1) * 24]);
+            const genreFilter = 'AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id = $1))';
+            const [result, count] = await Promise.all([
+                db.query(`SELECT m.* FROM movie m WHERE m.vote_count >= 200 ${genreFilter}
+                    ORDER BY ${order === 'popular' ? 'm.popularity' : 'm.vote_average'} DESC NULLS LAST, m.movie_id
+                    LIMIT 25 OFFSET $2`, [genre?.id || null, (page - 1) * 24]),
+                // El total permite mostrar "N películas" y "Página X de Y".
+                db.query(`SELECT COUNT(*)::int AS total FROM movie m WHERE m.vote_count >= 200 ${genreFilter}`, [genre?.id || null]),
+            ]);
+            const total = count.rows[0].total;
             const paginationQuery = new URLSearchParams({ orden: order });
             if (genre) paginationQuery.set('genero', genre.id);
-            res.render('explorar', { title: genre ? `Películas de ${genre.name.toLowerCase()}` : 'Mejor puntuadas', movies: cards(result.rows.slice(0,24)), genres, genre, order, page, hasNext: result.rows.length > 24, paginationQuery: paginationQuery.toString() });
+            res.render('explorar', { title: genre ? `Películas de ${genre.name.toLowerCase()}` : 'Todo el catálogo', movies: cards(result.rows.slice(0,24)), genres, genre, order, page, hasNext: result.rows.length > 24, paginationQuery: paginationQuery.toString(), total, totalPages: Math.max(1, Math.ceil(total / 24)) });
         } catch (error) { next(error); }
     });
     app.get('/que-ver', async (req, res, next) => {
@@ -173,8 +184,13 @@ function registerDiscovery(app, db, requireAuth) {
         if (!Number.isInteger(page) || page < 1 || page > 500) return res.status(400).send('Página inválida.');
         try {
             // Se pide una película de más para saber si existe una página siguiente.
-            const movies = await suggestions(res.locals.currentUser?.user_id, mood, { limit: 25, offset: (page - 1) * 24 });
-            res.render('sugerencias', { movies: movies.slice(0, 24), mood, page, hasNext: movies.length > 24 });
+            const userId = res.locals.currentUser?.user_id;
+            const [movies, total] = await Promise.all([
+                suggestions(userId, mood, { limit: 25, offset: (page - 1) * 24 }),
+                countSuggestions(userId, mood),
+            ]);
+            res.render('sugerencias', { movies: movies.slice(0, 24), mood, page, hasNext: movies.length > 24,
+                total, totalPages: Math.max(1, Math.ceil(total / 24)) });
         }
         catch (error) { next(error); }
     });

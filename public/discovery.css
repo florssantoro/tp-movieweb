@@ -126,3 +126,38 @@
     .home-hero-controls button { width:40px; height:40px; }
 }
 @media (prefers-reduced-motion:reduce) { .home-hero *, .home .site-header { transition:none !important; animation:none !important; } }
+
+/* ---------- Explorar: encabezado, orden y géneros ---------- */
+
+.explore-head { margin-bottom: 28px; }
+.explore-head h1 { margin: 0 0 10px; font-size: clamp(34px, 4.8vw, 60px); letter-spacing: -0.04em; }
+.explore-head > p:last-child { margin: 0; color: var(--text-muted); }
+
+.explore-controls { display: grid; gap: 16px; margin-bottom: 32px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+
+.segmented { display: inline-flex; width: fit-content; padding: 4px; border: 1px solid var(--border-strong); border-radius: 999px; background: var(--bg-elevated); }
+.segmented a { padding: 8px 18px; border-radius: 999px; color: var(--text-muted); font-size: 14px; font-weight: 700; }
+.segmented a:hover { color: var(--text); }
+.segmented a[aria-current] { background: var(--surface-hover); color: var(--text); box-shadow: inset 0 0 0 1px var(--border-strong); }
+
+.genre-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.genre-chips a { padding: 7px 14px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.genre-chips a:hover { border-color: var(--border-strong); color: var(--text); }
+.genre-chips a[aria-current] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+
+.pagination span { color: var(--text-muted); }
+.pagination span strong { color: var(--text); }
+
+@media (max-width: 600px) {
+    /* En el celular los géneros se deslizan en una sola fila. */
+    .genre-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+    .genre-chips::-webkit-scrollbar { display: none; }
+}
+
+/* Los filtros de "¿Qué ver?" y "Mi lista" con los mismos chips que los géneros de Explorar. */
+.filter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 0; }
+.filter-tabs a { padding: 8px 16px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.filter-tabs a:hover { border-color: var(--border-strong); color: var(--text); }
+.filter-tabs a[aria-current] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.discovery-intro + .filter-tabs { margin-bottom: 24px; }
+.explore-count { margin: 0; color: var(--text-faint); font-size: 14px; }

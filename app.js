@@ -58,6 +58,29 @@ app.use(session({
     },
 }));
 
+// Reseñas de todos los usuarios para una película: el resumen (promedio) y las más recientes.
+// Solo cuenta las filas con puntuación u opinión: una favorita sin reseña no es una reseña.
+async function loadCommunityReviews(movieId) {
+    try {
+        const [summary, reviews] = await Promise.all([
+            db.query(`SELECT COUNT(*)::int AS total, COUNT(rating)::int AS ratings, ROUND(AVG(rating), 1) AS average
+                FROM movie_user WHERE movie_id = $1 AND (rating IS NOT NULL OR opinion IS NOT NULL)`, [movieId]),
+            db.query(`SELECT u.user_id, u.user_username, u.user_name, mu.rating, mu.opinion, mu.updated_at
+                FROM movie_user mu
+                INNER JOIN users u ON u.user_id = mu.user_id
+                WHERE mu.movie_id = $1 AND (mu.rating IS NOT NULL OR mu.opinion IS NOT NULL)
+                ORDER BY mu.updated_at DESC, u.user_username
+                LIMIT 50`, [movieId]),
+        ]);
+        const { total, ratings, average } = summary.rows[0];
+        return { available: true, total, ratings, average: average === null ? null : Number(average), items: reviews.rows };
+    } catch (err) {
+        // Sin las migraciones de usuarios (tablas o columna updated_at), la ficha se muestra igual.
+        if (err.code === '42P01' || err.code === '42703') return { available: false, total: 0, ratings: 0, average: null, items: [] };
+        throw err;
+    }
+}
+
 async function loadRatingUsers() {
     const tables = await db.query(`
         SELECT to_regclass('movies.users') IS NOT NULL AS users_available,
@@ -429,6 +452,7 @@ app.get('/pelicula/:id', async (req, res) => {
         );
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
         const ratingUsers = await (app.locals.loadRatingUsers || loadRatingUsers)();
+        const communityReviews = ratingUsers.available ? await loadCommunityReviews(movieId) : null;
         const selectedUser = ratingUsers.available ? res.locals.currentUser : null;
         // Una película guardada desde TMDB está en la base sin elenco: se completa con TMDB, como los géneros.
         const people = cast.rows.length || crew.rows.length
@@ -457,6 +481,7 @@ app.get('/pelicula/:id', async (req, res) => {
             tmdb,
             users: ratingUsers.users,
             ratingsAvailable: ratingUsers.available,
+            communityReviews,
             selectedUser,
             interaction,
         });
@@ -851,6 +876,56 @@ async function recordActivity(userId, movieId, before, after) {
     }
 }
 
+// Una película que solo está en TMDB se guarda en la tabla movie recién cuando un usuario interactúa con ella,
+// así la clave foránea de movie_user sigue siendo válida. Devuelve false si TMDB tampoco la tiene.
+async function ensureMovieSaved(movieId) {
+    if ((await db.query('SELECT 1 FROM movie WHERE movie_id = $1', [movieId])).rowCount) return true;
+    const remote = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
+    if (!remote?.movie) return false;
+    await db.query('INSERT INTO movie (movie_id, title, release_date) VALUES ($1, $2, $3) ON CONFLICT (movie_id) DO NOTHING',
+        [movieId, remote.movie.title.slice(0, 1000), /^\d{4}-\d{2}-\d{2}$/.test(remote.movie.release_date || '') ? remote.movie.release_date : null]);
+    return true;
+}
+
+// Botones rápidos de la ficha: prenden o apagan "Favorita", "Vista" o "Quiero ver" sin tocar la puntuación ni la opinión.
+app.post('/pelicula/:id/estado', requireAuth, async (req, res) => {
+    const movieId = Number(req.params.id);
+    const userId = res.locals.currentUser.user_id;
+    if (!validId(req.params.id)) return res.status(400).send('Película inválida.');
+    if (!['favorite', 'watched', 'want_to_watch'].includes(req.body.toggle)) return res.status(400).send('Estado inválido.');
+
+    try {
+        if (!(await ensureMovieSaved(movieId))) return res.status(400).send('La película no está disponible.');
+        const previous = (await db.query(
+            'SELECT rating, opinion, is_favorite, watch_status FROM movie_user WHERE user_id = $1 AND movie_id = $2',
+            [userId, movieId]
+        )).rows[0] || { rating: null, opinion: null, is_favorite: false, watch_status: null };
+
+        const next = { ...previous };
+        if (req.body.toggle === 'favorite') next.is_favorite = !previous.is_favorite;
+        // "Vista" y "Quiero ver" se reemplazan entre sí: una película no puede estar en los dos estados.
+        else next.watch_status = previous.watch_status === req.body.toggle ? null : req.body.toggle;
+
+        if (!next.is_favorite && !next.watch_status && next.rating === null && !next.opinion) {
+            await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2', [userId, movieId]);
+        } else {
+            await db.query(`INSERT INTO movie_user (user_id, movie_id, is_favorite, watch_status)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (user_id, movie_id) DO UPDATE SET
+                is_favorite = EXCLUDED.is_favorite, watch_status = EXCLUDED.watch_status`,
+                [userId, movieId, next.is_favorite, next.watch_status]);
+        }
+        await recordActivity(userId, movieId, previous, next);
+        res.redirect(`/pelicula/${movieId}`);
+    } catch (err) {
+        if (err.code === '42P01' || err.code === '42703') {
+            return res.status(503).send('Las interacciones no están disponibles temporalmente.');
+        }
+        console.error(err);
+        res.status(500).send('Error al guardar el estado de la película.');
+    }
+});
+
 // Guarda la interacción completa o solamente la valoración del endpoint anterior.
 app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, async (req, res) => {
     const legacy = req.path.endsWith('/calificar');
@@ -889,12 +964,8 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
 
     try {
         if (!remove && (legacy || favorite || watchStatus || rating !== null || opinion) &&
-            !(await db.query('SELECT 1 FROM movie WHERE movie_id = $1', [movieId])).rowCount) {
-            const remote = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
-            if (!remote?.movie) return res.status(400).send('La película no está disponible.');
-            // Persist only when the signed-in user saves it, so the existing FK remains valid.
-            await db.query('INSERT INTO movie (movie_id, title, release_date) VALUES ($1, $2, $3) ON CONFLICT (movie_id) DO NOTHING',
-                [movieId, remote.movie.title.slice(0, 1000), /^\d{4}-\d{2}-\d{2}$/.test(remote.movie.release_date || '') ? remote.movie.release_date : null]);
+            !(await ensureMovieSaved(movieId))) {
+            return res.status(400).send('La película no está disponible.');
         }
         const exists = await db.query(`SELECT EXISTS(SELECT 1 FROM users WHERE user_id = $1) AS valid_user,
             EXISTS(SELECT 1 FROM movie WHERE movie_id = $2) AS valid_movie`, [userId, movieId]);
@@ -908,6 +979,9 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
 
         if (legacy) {
             await db.query(upsertQuery, [userId, movieId, rating, opinion]);
+            // Si la reseña quedó vacía y no hay favorita ni estado, la relación ya no guarda nada.
+            await db.query(`DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2
+                AND rating IS NULL AND opinion IS NULL AND NOT is_favorite AND watch_status IS NULL`, [userId, movieId]);
             await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: previous.is_favorite });
         } else if (remove || (!favorite && !watchStatus && rating === null && !opinion)) {
             await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2', [userId, movieId]);

@@ -38,8 +38,8 @@ test('interaction lifecycle preserves independent states and legacy ratings', as
     const detail = await fetch(`${baseUrl}/pelicula/238`, { headers: { cookie } });
     const html = await detail.text();
     assert.equal(detail.status, 200);
-    assert.match(html, /name="is_favorite" checked/);
-    assert.match(html, /value="want_to_watch" selected/);
+    assert.match(html, /action-favorite" type="submit" aria-pressed="true"/);
+    assert.match(html, /action-want" type="submit" aria-pressed="true"/);
     assert.match(html, /value="4" selected/);
     assert.match(html, /&lt;script&gt;opinión&lt;\/script&gt;/);
     assert.doesNotMatch(html, /<script>opinión/);
@@ -208,5 +208,69 @@ test('migration supports a fresh installation and preserves existing rows when r
         await client.query('ROLLBACK');
         await client.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
         client.release();
+    }
+});
+
+test('favorite, watched and want-to-watch buttons work independently of the review', async () => {
+    await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = 238', [userId]);
+    const toggle = (value) => post({ toggle: value }, 'estado');
+    const state = (is_favorite, watch_status, rating, opinion) => [{ is_favorite, watch_status, rating, opinion }];
+
+    assert.equal((await toggle('favorite')).status, 302);
+    assert.deepEqual(await saved(), state(true, null, null, null), 'favorita sin reseña');
+
+    assert.equal((await post({ rating: '4', opinion: 'Buena' }, 'calificar')).status, 302);
+    assert.deepEqual(await saved(), state(true, null, 4, 'Buena'), 'la reseña no toca la favorita');
+
+    await toggle('watched');
+    assert.deepEqual(await saved(), state(true, 'watched', 4, 'Buena'), 'marcar vista no toca la reseña');
+    await toggle('want_to_watch');
+    assert.deepEqual(await saved(), state(true, 'want_to_watch', 4, 'Buena'), '"Quiero ver" reemplaza a "Vista"');
+    await toggle('want_to_watch');
+    await toggle('favorite');
+    assert.deepEqual(await saved(), state(false, null, 4, 'Buena'), 'apagar los botones conserva la reseña');
+
+    await post({ rating: '', opinion: '' }, 'calificar');
+    assert.deepEqual(await saved(), [], 'sin reseña ni estados, la relación se borra');
+
+    await toggle('watched');
+    await toggle('watched');
+    assert.deepEqual(await saved(), [], 'apagar el único estado también la borra');
+
+    assert.equal((await toggle('otra-cosa')).status, 400);
+    const anonymous = await fetch(`${baseUrl}/pelicula/238/estado`, {
+        method: 'POST', redirect: 'manual', body: new URLSearchParams({ toggle: 'favorite' }),
+    });
+    assert.equal(anonymous.headers.get('location'), '/login');
+});
+
+test('movie page shows other users reviews and the community average', async () => {
+    const movieId = (await db.query(`SELECT movie_id FROM movie
+        WHERE movie_id NOT IN (SELECT movie_id FROM movie_user) ORDER BY movie_id LIMIT 1`)).rows[0].movie_id;
+    const other = (await db.query('SELECT user_username FROM users WHERE user_id = $1', [otherUserId])).rows[0];
+    const communityOf = (html) => html.slice(html.indexOf('id="community-heading"'));
+
+    try {
+        // Una favorita sin puntuación ni opinión no es una reseña.
+        await db.query('INSERT INTO movie_user (user_id, movie_id, is_favorite) VALUES ($1, $2, TRUE)', [otherUserId, movieId]);
+        let html = await (await fetch(`${baseUrl}/pelicula/${movieId}`, { headers: { cookie } })).text();
+        assert.match(communityOf(html), /Todavía nadie reseñó esta película/);
+
+        await db.query("UPDATE movie_user SET rating = 5, opinion = '<b>Obra</b> maestra' WHERE user_id = $1 AND movie_id = $2", [otherUserId, movieId]);
+        assert.equal((await post({ rating: '3', opinion: 'Mi opinión' }, 'calificar', String(movieId))).status, 302);
+
+        html = communityOf(await (await fetch(`${baseUrl}/pelicula/${movieId}`, { headers: { cookie } })).text());
+        assert.match(html, /Reseñas de la comunidad <span class="movie-count">2<\/span>/);
+        assert.match(html, /<strong>4<\/strong> \/ 5 · 2 puntuaciones/);
+        assert.match(html, new RegExp(`href="/usuarios/${otherUserId}"[^>]*>.*${other.user_username}`));
+        assert.match(html, /&lt;b&gt;Obra&lt;\/b&gt; maestra/, 'la opinión se muestra escapada');
+        assert.match(html, /review-card-mine[\s\S]*Tu reseña[\s\S]*Mi opinión/, 'la propia reseña aparece marcada');
+        assert.ok(html.indexOf('Mi opinión') < html.indexOf('Obra'), 'la propia reseña va primero');
+
+        const anonymous = communityOf(await (await fetch(`${baseUrl}/pelicula/${movieId}`)).text());
+        assert.match(anonymous, /Obra/);
+        assert.match(anonymous, /Mi opinión/, 'sin sesión se ven todas las reseñas');
+    } finally {
+        await db.query('DELETE FROM movie_user WHERE movie_id = $1 AND user_id = ANY($2::int[])', [movieId, [userId, otherUserId]]);
     }
 });
