@@ -205,6 +205,48 @@ const primaryOverview = tmdb?.overview || movie.overview;
             <% } %>
         <% } %>
     </section>
+
+    <% if (locals.communityReviews?.available) { %>
+    <%
+    const community = locals.communityReviews;
+    const myId = locals.selectedUser?.user_id;
+    // Tu propia reseña ya aparece arriba, en "Tu reseña": acá se muestran las de los demás.
+    const others = community.items.filter((review) => review.user_id !== myId);
+    const shownReviews = others.slice(0, 6);
+    const moreReviews = others.slice(6);
+    const reviewDate = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' });
+    const reviewInitials = (review) => String(review.user_name || review.user_username || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+    %>
+    <section class="movie-section" aria-labelledby="community-heading">
+        <div class="movie-section-heading">
+            <h2 id="community-heading">Reseñas de la comunidad <span class="movie-count"><%= community.total %></span></h2>
+            <% if (community.average !== null) { %>
+                <p class="community-average"><span class="stars" aria-hidden="true">★</span> <strong><%= community.average.toLocaleString('es-AR') %></strong> / 5 · <%= community.ratings %> <%= community.ratings === 1 ? 'puntuación' : 'puntuaciones' %></p>
+            <% } %>
+        </div>
+        <% if (others.length === 0) { %>
+            <p class="movie-muted"><%= community.total ? 'Por ahora solo está tu reseña.' : 'Todavía nadie reseñó esta película. ¡Podés ser el primero!' %></p>
+        <% } else { %>
+            <% const renderReviews = (list) => list.forEach((review) => { %>
+                <li class="review-card">
+                    <div class="review-head">
+                        <a class="review-author" href="/usuarios/<%= review.user_id %>"><span class="avatar" aria-hidden="true"><%= reviewInitials(review) %></span><%= review.user_username %></a>
+                        <% if (review.rating) { %><span class="stars" aria-label="<%= review.rating %> de 5"><%= '★'.repeat(review.rating) %><span class="stars-off"><%= '★'.repeat(5 - review.rating) %></span></span><% } %>
+                        <% if (review.updated_at) { %><time class="review-date" datetime="<%= new Date(review.updated_at).toISOString() %>"><%= reviewDate.format(new Date(review.updated_at)) %></time><% } %>
+                    </div>
+                    <% if (review.opinion) { %><p class="review-text"><%= review.opinion %></p><% } else { %><p class="review-text movie-muted">Puntuó sin escribir opinión.</p><% } %>
+                </li>
+            <% }); %>
+            <ul class="review-list"><% renderReviews(shownReviews); %></ul>
+            <% if (moreReviews.length) { %>
+                <details class="movie-disclosure">
+                    <summary>Ver todas (<%= others.length %>)</summary>
+                    <ul class="review-list movie-credits-additional"><% renderReviews(moreReviews); %></ul>
+                </details>
+            <% } %>
+        <% } %>
+    </section>
+    <% } %>
 </main>
 
 <footer class="site-footer">

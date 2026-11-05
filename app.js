@@ -58,6 +58,29 @@ app.use(session({
     },
 }));
 
+// Reseñas de todos los usuarios para una película: el resumen (promedio) y las más recientes.
+// Solo cuenta las filas con puntuación u opinión: una favorita sin reseña no es una reseña.
+async function loadCommunityReviews(movieId) {
+    try {
+        const [summary, reviews] = await Promise.all([
+            db.query(`SELECT COUNT(*)::int AS total, COUNT(rating)::int AS ratings, ROUND(AVG(rating), 1) AS average
+                FROM movie_user WHERE movie_id = $1 AND (rating IS NOT NULL OR opinion IS NOT NULL)`, [movieId]),
+            db.query(`SELECT u.user_id, u.user_username, u.user_name, mu.rating, mu.opinion, mu.updated_at
+                FROM movie_user mu
+                INNER JOIN users u ON u.user_id = mu.user_id
+                WHERE mu.movie_id = $1 AND (mu.rating IS NOT NULL OR mu.opinion IS NOT NULL)
+                ORDER BY mu.updated_at DESC, u.user_username
+                LIMIT 50`, [movieId]),
+        ]);
+        const { total, ratings, average } = summary.rows[0];
+        return { available: true, total, ratings, average: average === null ? null : Number(average), items: reviews.rows };
+    } catch (err) {
+        // Sin las migraciones de usuarios (tablas o columna updated_at), la ficha se muestra igual.
+        if (err.code === '42P01' || err.code === '42703') return { available: false, total: 0, ratings: 0, average: null, items: [] };
+        throw err;
+    }
+}
+
 async function loadRatingUsers() {
     const tables = await db.query(`
         SELECT to_regclass('movies.users') IS NOT NULL AS users_available,
@@ -429,6 +452,7 @@ app.get('/pelicula/:id', async (req, res) => {
         );
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
         const ratingUsers = await (app.locals.loadRatingUsers || loadRatingUsers)();
+        const communityReviews = ratingUsers.available ? await loadCommunityReviews(movieId) : null;
         const selectedUser = ratingUsers.available ? res.locals.currentUser : null;
         // Una película guardada desde TMDB está en la base sin elenco: se completa con TMDB, como los géneros.
         const people = cast.rows.length || crew.rows.length
@@ -457,6 +481,7 @@ app.get('/pelicula/:id', async (req, res) => {
             tmdb,
             users: ratingUsers.users,
             ratingsAvailable: ratingUsers.available,
+            communityReviews,
             selectedUser,
             interaction,
         });

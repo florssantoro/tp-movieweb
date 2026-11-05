@@ -244,3 +244,32 @@ test('favorite, watched and want-to-watch buttons work independently of the revi
     assert.equal(anonymous.headers.get('location'), '/login');
 });
 
+test('movie page shows other users reviews and the community average', async () => {
+    const movieId = (await db.query(`SELECT movie_id FROM movie
+        WHERE movie_id NOT IN (SELECT movie_id FROM movie_user) ORDER BY movie_id LIMIT 1`)).rows[0].movie_id;
+    const other = (await db.query('SELECT user_username FROM users WHERE user_id = $1', [otherUserId])).rows[0];
+    const communityOf = (html) => html.slice(html.indexOf('id="community-heading"'));
+
+    try {
+        // Una favorita sin puntuación ni opinión no es una reseña.
+        await db.query('INSERT INTO movie_user (user_id, movie_id, is_favorite) VALUES ($1, $2, TRUE)', [otherUserId, movieId]);
+        let html = await (await fetch(`${baseUrl}/pelicula/${movieId}`, { headers: { cookie } })).text();
+        assert.match(communityOf(html), /Todavía nadie reseñó esta película/);
+
+        await db.query("UPDATE movie_user SET rating = 5, opinion = '<b>Obra</b> maestra' WHERE user_id = $1 AND movie_id = $2", [otherUserId, movieId]);
+        assert.equal((await post({ rating: '3', opinion: 'Mi opinión' }, 'calificar', String(movieId))).status, 302);
+
+        html = communityOf(await (await fetch(`${baseUrl}/pelicula/${movieId}`, { headers: { cookie } })).text());
+        assert.match(html, /Reseñas de la comunidad <span class="movie-count">2<\/span>/);
+        assert.match(html, /<strong>4<\/strong> \/ 5 · 2 puntuaciones/);
+        assert.match(html, new RegExp(`href="/usuarios/${otherUserId}"[^>]*>.*${other.user_username}`));
+        assert.match(html, /&lt;b&gt;Obra&lt;\/b&gt; maestra/, 'la opinión se muestra escapada');
+        assert.doesNotMatch(html, /Mi opinión/, 'la propia reseña no se repite en la lista');
+
+        const anonymous = communityOf(await (await fetch(`${baseUrl}/pelicula/${movieId}`)).text());
+        assert.match(anonymous, /Obra/);
+        assert.match(anonymous, /Mi opinión/, 'sin sesión se ven todas las reseñas');
+    } finally {
+        await db.query('DELETE FROM movie_user WHERE movie_id = $1 AND user_id = ANY($2::int[])', [movieId, [userId, otherUserId]]);
+    }
+});
