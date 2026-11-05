@@ -877,8 +877,14 @@ body.movie-page { line-height: 1.55; }
 .action-watched span { color: var(--link); }
 .action-favorite[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
 .action-watched[aria-pressed="true"] { border-color: var(--link); background: var(--accent-2-soft, rgba(121, 184, 243, 0.14)); }
-.action-want span { color: var(--text-muted); font-size: 18px; }
-.action-want[aria-pressed="true"] { border-color: var(--text-muted); background: var(--surface-hover); }
+.action-want span { color: var(--accent-2, var(--link)); font-size: 18px; }
+.action-want[aria-pressed="true"] {
+    border-color: var(--accent-2, var(--link));
+    background: var(--accent-2-soft, rgba(121, 184, 243, 0.14));
+    color: var(--accent-2-hover, var(--link-hover));
+    box-shadow: inset 0 0 0 1px rgba(121, 184, 243, 0.12);
+}
+.action-want[aria-pressed="true"]:hover { background: rgba(121, 184, 243, 0.2); }
 
 /* ---------- Ficha: reseñas de la comunidad ---------- */
 

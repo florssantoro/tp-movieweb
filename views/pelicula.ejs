@@ -45,7 +45,7 @@ const primaryOverview = tmdb?.overview || movie.overview;
                 <% if (movie.runtime != null) { %><p><strong>Duración</strong> <%= movie.runtime %> min</p><% } %>
                 <% if (formattedDate) { %><p><strong>Estreno</strong> <%= formattedDate %></p><% } %>
             </div>
-            <% if (ratingsAvailable) { const quick = locals.interaction || {}; %>
+            <% if (ratingsAvailable) { const quick = locals.interaction || {}; const hasWatched = quick.watch_status === 'watched'; const wantsToWatch = quick.watch_status === 'want_to_watch'; %>
             <div class="movie-actions">
                 <% if (locals.selectedUser) { %>
                     <form action="/pelicula/<%= movie.movie_id %>/estado" method="POST">
@@ -54,16 +54,16 @@ const primaryOverview = tmdb?.overview || movie.overview;
                     </form>
                     <form action="/pelicula/<%= movie.movie_id %>/estado" method="POST">
                         <input type="hidden" name="toggle" value="watched">
-                        <button class="action-toggle action-watched" type="submit" aria-pressed="<%= quick.watch_status === 'watched' ? 'true' : 'false' %>"><span aria-hidden="true">✓</span><%= quick.watch_status === 'watched' ? 'Vista' : 'Marcar como vista' %></button>
+                        <button class="action-toggle action-watched" type="submit" aria-pressed="<%= hasWatched ? 'true' : 'false' %>" aria-label="<%= hasWatched ? 'Quitar de vistas' : 'Marcar como vista' %>"><span aria-hidden="true"><%= hasWatched ? '✓' : '+' %></span><%= hasWatched ? 'Vista' : 'Marcar como vista' %></button>
                     </form>
                     <form action="/pelicula/<%= movie.movie_id %>/estado" method="POST">
                         <input type="hidden" name="toggle" value="want_to_watch">
-                        <button class="action-toggle action-want" type="submit" aria-pressed="<%= quick.watch_status === 'want_to_watch' ? 'true' : 'false' %>"><span aria-hidden="true">+</span><%= quick.watch_status === 'want_to_watch' ? 'En tu lista' : 'Quiero ver' %></button>
+                        <button class="action-toggle action-want" type="submit" aria-pressed="<%= wantsToWatch ? 'true' : 'false' %>" aria-label="<%= wantsToWatch ? 'Quitar de Quiero ver' : 'Agregar a Quiero ver' %>"><span aria-hidden="true"><%= wantsToWatch ? '✓' : '+' %></span><%= wantsToWatch ? 'En Quiero ver' : 'Agregar a Quiero ver' %></button>
                     </form>
                 <% } else { %>
                     <a class="action-toggle action-favorite" href="/login"><span aria-hidden="true">♥</span>Favorita</a>
-                    <a class="action-toggle action-watched" href="/login"><span aria-hidden="true">✓</span>Marcar como vista</a>
-                    <a class="action-toggle action-want" href="/login"><span aria-hidden="true">+</span>Quiero ver</a>
+                    <a class="action-toggle action-watched" href="/login"><span aria-hidden="true">+</span>Marcar como vista</a>
+                    <a class="action-toggle action-want" href="/login"><span aria-hidden="true">+</span>Agregar a Quiero ver</a>
                 <% } %>
             </div>
             <% } %>

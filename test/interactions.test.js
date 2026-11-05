@@ -40,6 +40,7 @@ test('interaction lifecycle preserves independent states and legacy ratings', as
     assert.equal(detail.status, 200);
     assert.match(html, /action-favorite" type="submit" aria-pressed="true"/);
     assert.match(html, /action-want" type="submit" aria-pressed="true"/);
+    assert.match(html, /aria-label="Quitar de Quiero ver"><span aria-hidden="true">✓<\/span>En Quiero ver/);
     assert.match(html, /value="4" selected/);
     assert.match(html, /&lt;script&gt;opinión&lt;\/script&gt;/);
     assert.doesNotMatch(html, /<script>opinión/);
@@ -224,9 +225,14 @@ test('favorite, watched and want-to-watch buttons work independently of the revi
 
     await toggle('watched');
     assert.deepEqual(await saved(), state(true, 'watched', 4, 'Buena'), 'marcar vista no toca la reseña');
+    const watched = await (await fetch(`${baseUrl}/pelicula/238`, { headers: { cookie } })).text();
+    assert.match(watched, /action-watched" type="submit" aria-pressed="true" aria-label="Quitar de vistas"><span aria-hidden="true">✓<\/span>Vista/);
     await toggle('want_to_watch');
     assert.deepEqual(await saved(), state(true, 'want_to_watch', 4, 'Buena'), '"Quiero ver" reemplaza a "Vista"');
     await toggle('want_to_watch');
+    const withoutWantToWatch = await (await fetch(`${baseUrl}/pelicula/238`, { headers: { cookie } })).text();
+    assert.match(withoutWantToWatch, /action-watched" type="submit" aria-pressed="false" aria-label="Marcar como vista"><span aria-hidden="true">\+<\/span>Marcar como vista/);
+    assert.match(withoutWantToWatch, /aria-pressed="false" aria-label="Agregar a Quiero ver"><span aria-hidden="true">\+<\/span>Agregar a Quiero ver/);
     await toggle('favorite');
     assert.deepEqual(await saved(), state(false, null, 4, 'Buena'), 'apagar los botones conserva la reseña');
 
