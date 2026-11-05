@@ -153,3 +153,11 @@
     .genre-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
     .genre-chips::-webkit-scrollbar { display: none; }
 }
+
+/* Los filtros de "¿Qué ver?" y "Mi lista" con los mismos chips que los géneros de Explorar. */
+.filter-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 0; }
+.filter-tabs a { padding: 8px 16px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); font-size: 14px; font-weight: 600; white-space: nowrap; }
+.filter-tabs a:hover { border-color: var(--border-strong); color: var(--text); }
+.filter-tabs a[aria-current] { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.discovery-intro + .filter-tabs { margin-bottom: 24px; }
+.explore-count { margin: 0; color: var(--text-faint); font-size: 14px; }

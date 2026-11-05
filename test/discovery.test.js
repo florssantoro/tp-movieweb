@@ -143,3 +143,12 @@ test('explore page shows the total, instant filters and page count', async () =>
     assert.match(popularHorror, /href="\/explorar\?orden=popular" aria-current="page">Todos|href="\/explorar\?orden=popular" >Todos/);
     assert.match(popularHorror, /href="\/explorar\?genero=27" >Mejor puntuadas/, 'cambiar el orden mantiene el género');
 });
+
+test('suggestions page shows how many movies there are and the page count', async () => {
+    const total = (await db.query('SELECT COUNT(*)::int AS n FROM movie WHERE vote_count >= 200 AND runtime BETWEEN 1 AND 100')).rows[0].n;
+    const html = await (await fetch(`${base}/que-ver?animo=corta`)).text();
+    assert.doesNotMatch(html, /← Inicio/);
+    assert.ok(html.includes(`${total.toLocaleString('es-AR')} películas para elegir`));
+    assert.ok(html.includes(`Página <strong>1</strong> de ${Math.ceil(total / 24)}`));
+    assert.match(html, /href="\/que-ver\?animo=corta" aria-current="page">Hasta 100 minutos/);
+});
