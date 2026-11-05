@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><%- include('partials/head', { pageTitle: 'Reseñas' }) %></head>
+<body>
+<%- include('partials/header') %>
+<%
+const myId = locals.currentUser?.user_id;
+const reviewDate = new Intl.DateTimeFormat('es-AR', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' });
+const initials = (name) => String(name || '?').trim().split(/[\s._-]+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+const pageLink = (number) => `/resenas?${new URLSearchParams({ ...(query ? { q: query } : {}), page: number })}`;
+%>
+<main class="discovery container">
+    <header class="explore-head">
+        <p class="eyebrow">Lo que opina la comunidad</p>
+        <h1>Reseñas</h1>
+        <p>Buscá por película, por usuario o por lo que dice la reseña. Las tuyas las podés editar o borrar.</p>
+    </header>
+
+    <div class="explore-controls">
+        <form class="reviews-search" action="/resenas" method="GET" role="search">
+            <input class="input" type="search" name="q" value="<%= query %>" maxlength="100" placeholder="Ej.: Interstellar, demo_ana, música..." aria-label="Buscar reseñas">
+            <button class="btn" type="submit">Buscar</button>
+            <% if (query) { %><a class="btn btn-ghost" href="/resenas">Limpiar</a><% } %>
+        </form>
+        <% if (available) { %>
+            <p class="explore-count"><%= total.toLocaleString('es-AR') %> <%= total === 1 ? 'reseña' : 'reseñas' %><%= query ? ` para "${query}"` : '' %></p>
+        <% } %>
+    </div>
+
+    <% if (notice) { %><p class="notice" role="status"><%= notice %></p><% } %>
+
+    <% if (!available) { %>
+        <p class="empty">Las reseñas no están disponibles en este momento (MongoDB no responde).</p>
+    <% } else if (reviews.length === 0) { %>
+        <p class="empty"><%= query ? 'No encontramos reseñas con esa búsqueda.' : 'Todavía no hay reseñas.' %></p>
+    <% } else { %>
+        <ul class="review-list">
+            <% reviews.forEach((review) => { const mine = review.userId === myId; %>
+                <li class="review-card<%= mine ? ' review-card-mine' : '' %>">
+                    <a class="review-movie" href="/pelicula/<%= review.movieId %>"><%= review.movieTitle || 'Película' %></a>
+                    <div class="review-head">
+                        <a class="review-author" href="/usuarios/<%= review.userId %>"><span class="avatar" aria-hidden="true"><%= initials(review.username) %></span><%= review.username %></a>
+                        <% if (mine) { %><span class="review-mine">Tu reseña</span><% } %>
+                        <% if (review.rating) { %><span class="stars" aria-label="<%= review.rating %> de 5"><%= '★'.repeat(review.rating) %><span class="stars-off"><%= '★'.repeat(5 - review.rating) %></span></span><% } %>
+                        <% if (review.updatedAt) { %><time class="review-date" datetime="<%= new Date(review.updatedAt).toISOString() %>"><%= reviewDate.format(new Date(review.updatedAt)) %></time><% } %>
+                    </div>
+                    <p class="review-text"><%= review.text %></p>
+                    <% if (mine) { %>
+                        <div class="review-actions">
+                            <a class="btn btn-ghost btn-sm" href="/resenas/<%= review._id %>/editar">Editar</a>
+                            <form action="/resenas/<%= review._id %>/eliminar" method="POST" data-confirm="¿Borrar tu reseña de <%= review.movieTitle || 'esta película' %>?" onsubmit="return confirm(this.dataset.confirm);">
+                                <button class="btn btn-danger btn-sm" type="submit">Borrar</button>
+                            </form>
+                        </div>
+                    <% } %>
+                </li>
+            <% }); %>
+        </ul>
+
+        <% if (totalPages > 1) { %>
+        <nav class="pagination" aria-label="Páginas">
+            <% if (page > 1) { %><a class="btn btn-ghost" href="<%= pageLink(page - 1) %>">← Anterior</a><% } %>
+            <span>Página <strong><%= page %></strong> de <%= totalPages %></span>
+            <% if (page < totalPages) { %><a class="btn btn-ghost" href="<%= pageLink(page + 1) %>">Siguiente →</a><% } %>
+        </nav>
+        <% } %>
+    <% } %>
+</main>
+<%- include('partials/footer') %>
+</body>
+</html>

@@ -83,7 +83,7 @@ test('saving interactions records only what changed as activity events', async (
     assert.deepEqual(takeEventTypes(), ['RATED_MOVIE']);
 
     assert.equal((await post({ is_favorite: 'on', rating: '5', opinion: 'Un clásico' })).status, 302);
-    assert.deepEqual(loggedEvents[0].details, { movieId: 11, movieTitle: 'Star Wars', opinion: 'Un clásico' });
+    assert.deepEqual(loggedEvents[0].details, { movieId: 11, movieTitle: 'Star Wars', reviewId: null, opinion: 'Un clásico' });
     assert.deepEqual(takeEventTypes(), ['WROTE_REVIEW']);
 
     assert.equal((await post({ is_favorite: 'on', rating: '5', opinion: 'Un clásico' })).status, 302);

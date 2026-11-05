@@ -4,30 +4,38 @@ const { MongoClient } = require('mongodb');
 const ACTIVITY_TYPES = ['RATED_MOVIE', 'ADDED_TO_FAVORITES', 'WROTE_REVIEW'];
 
 let client = null;
-let collectionPromise = null;
+let databasePromise = null;
 
 // Se conecta una sola vez y reutiliza esa conexión en todos los pedidos.
-function getCollection() {
+// La comparten el timeline (user_activity) y las reseñas (reviews, en reviews.js).
+function getDatabase() {
     if (!process.env.MONGO_URL) return Promise.resolve(null);
 
-    if (!collectionPromise) {
+    if (!databasePromise) {
         const attempt = new MongoClient(process.env.MONGO_URL, { serverSelectionTimeoutMS: 2000 });
         client = attempt;
-        collectionPromise = attempt.connect()
+        databasePromise = attempt.connect()
             .then(async () => {
-                const collection = attempt.db(process.env.MONGO_DB || 'movieweb').collection('user_activity');
-                await collection.createIndex({ userId: 1, timestamp: -1 });
-                return collection;
+                const database = attempt.db(process.env.MONGO_DB || 'movieweb');
+                await database.collection('user_activity').createIndex({ userId: 1, timestamp: -1 });
+                await database.collection('reviews').createIndex({ userId: 1, movieId: 1 }, { unique: true });
+                await database.collection('reviews').createIndex({ updatedAt: -1 });
+                return database;
             })
             .catch(async (err) => {
                 // Si falla, se cierra este cliente y la próxima llamada vuelve a intentar conectarse.
-                collectionPromise = null;
+                databasePromise = null;
                 if (client === attempt) client = null;
                 await attempt.close().catch(() => {});
                 throw err;
             });
     }
-    return collectionPromise;
+    return databasePromise;
+}
+
+async function getCollection(name = 'user_activity') {
+    const database = await getDatabase();
+    return database ? database.collection(name) : null;
 }
 
 // Guarda un evento en el timeline del usuario.
@@ -70,7 +78,7 @@ async function deleteUserActivity(userId) {
 async function closeActivity() {
     if (client) await client.close();
     client = null;
-    collectionPromise = null;
+    databasePromise = null;
 }
 
-module.exports = { ACTIVITY_TYPES, logActivity, getTimeline, deleteUserActivity, closeActivity };
+module.exports = { ACTIVITY_TYPES, logActivity, getTimeline, deleteUserActivity, closeActivity, getCollection };

@@ -16,6 +16,7 @@ const PgSession = require('connect-pg-simple')(session);
 const { Pool } = require('pg');
 const { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto } = require('./tmdb');
 const { logActivity, getTimeline, deleteUserActivity } = require('./activity');
+const reviewStore = require('./reviews');
 const { registerDiscovery, findGenres } = require('./discovery');
 
 const app = express();
@@ -249,6 +250,12 @@ app.get('/buscar', async (req, res) => {
     if (!SEARCH_TYPES.has(searchType)) return res.status(400).send('Tipo de búsqueda inválido.');
 
     if (!searchTerm) {
+        // Con "Palabras clave" elegido y sin texto, se sugieren las palabras clave con más películas (search_keyword.ejs).
+        const popularKeywords = searchType === 'keyword'
+            ? (await db.query(`SELECT k.keyword_name, COUNT(*)::int AS movies
+                FROM keyword k JOIN movie_keywords mk ON mk.keyword_id = k.keyword_id
+                GROUP BY k.keyword_name ORDER BY COUNT(*) DESC, k.keyword_name LIMIT 16`).catch(() => ({ rows: [] }))).rows
+            : [];
         return res.render('resultado', {
             movies: [],
             genreMovies: [],
@@ -258,6 +265,7 @@ app.get('/buscar', async (req, res) => {
             directors: [],
             emptySearch: true,
             searchType,
+            popularKeywords,
         });
     }
 
@@ -297,7 +305,7 @@ app.get('/buscar', async (req, res) => {
         WHERE keyword.keyword_name ILIKE $1 ESCAPE '\\'
         GROUP BY movie.movie_id, movie.title, movie.release_date, movie.vote_count, movie.vote_average
         ORDER BY movie.vote_count DESC NULLS LAST, movie.vote_average DESC NULLS LAST, movie.title ASC
-        LIMIT 12`;
+        LIMIT ${searchType === 'keyword' ? 48 : 12}`;
 
     const genreMovieQuery = `
         SELECT movie.movie_id, movie.title, movie.release_date,
@@ -589,6 +597,7 @@ app.get('/director/:id', async (req, res) => {
 });
 
 // Las URLs anteriores siguen funcionando, pero convergen en el buscador único.
+// La búsqueda por palabra clave está integrada al buscador unificado (/buscar?tipo=keyword).
 app.get('/keyword', (req, res) => res.redirect('/buscar?tipo=keyword'));
 app.get('/keyword/resultados', (req, res) => {
     const searchTerm = typeof req.query.q === 'string' ? req.query.q.trim() : '';
@@ -758,6 +767,8 @@ app.post('/perfil/editar', requireAuth, async (req, res) => {
         await db.query(`UPDATE users SET user_username = $1, user_name = $2, user_email = $3 WHERE user_id = $4`,
             [values.user_username, values.user_name, values.user_email, res.locals.currentUser.user_id]);
         res.locals.currentUser = { ...res.locals.currentUser, ...values };
+        await (app.locals.reviewStore || reviewStore).renameUser(res.locals.currentUser.user_id, values.user_username)
+            .catch((err) => console.warn('No se pudo actualizar el username en las reseñas de MongoDB:', err.message));
         res.render('perfil_editar', { values, error: null, success: 'Tus datos se actualizaron.' });
     } catch (err) {
         if (err.code === '23505') {
@@ -802,6 +813,7 @@ app.post('/perfil/eliminar', requireAuth, async (req, res) => {
         await db.query('DELETE FROM users WHERE user_id = $1', [userId]);
         try {
             await (app.locals.deleteUserActivity || deleteUserActivity)(userId);
+            await (app.locals.reviewStore || reviewStore).removeUserReviews(userId);
         } catch (err) {
             // MongoDB no debe impedir que el usuario elimine su cuenta principal.
             console.warn('No se pudo eliminar la actividad de MongoDB:', err.message);
@@ -850,7 +862,29 @@ app.get('/usuarios/:id/editar', requireAuth, (req, res) => {
 app.post('/usuarios/:id/eliminar', (req, res) => res.status(404).send('Ruta no disponible.'));
 
 // Compara la interacción anterior con la nueva y registra en MongoDB lo que cambió.
-async function recordActivity(userId, movieId, before, after) {
+// Deja el documento de la reseña en MongoDB igual a la opinión guardada en PostgreSQL.
+// Si ya no hay opinión, borra el documento. Devuelve el id de la reseña (o null).
+async function syncReview(userId, movieId) {
+    const store = app.locals.reviewStore || reviewStore;
+    try {
+        const row = (await db.query(`SELECT mu.rating, mu.opinion, u.user_username, m.title
+            FROM movie_user mu
+            JOIN users u ON u.user_id = mu.user_id
+            JOIN movie m ON m.movie_id = mu.movie_id
+            WHERE mu.user_id = $1 AND mu.movie_id = $2`, [userId, movieId])).rows[0];
+        if (!row?.opinion) {
+            await store.removeReview(userId, movieId);
+            return null;
+        }
+        return await store.saveReview({ userId, username: row.user_username, movieId, movieTitle: row.title, rating: row.rating, text: row.opinion });
+    } catch (err) {
+        // Si MongoDB no está disponible, la reseña igual queda guardada en PostgreSQL.
+        console.warn('No se pudo sincronizar la reseña con MongoDB:', err.message);
+        return null;
+    }
+}
+
+async function recordActivity(userId, movieId, before, after, { reviewId = null } = {}) {
     const events = [];
     if (after.is_favorite && !before.is_favorite) {
         events.push({ type: 'ADDED_TO_FAVORITES', extra: {} });
@@ -859,7 +893,7 @@ async function recordActivity(userId, movieId, before, after) {
         events.push({ type: 'RATED_MOVIE', extra: { rating: after.rating } });
     }
     if (after.opinion && after.opinion !== before.opinion) {
-        events.push({ type: 'WROTE_REVIEW', extra: { opinion: after.opinion } });
+        events.push({ type: 'WROTE_REVIEW', extra: { reviewId, opinion: after.opinion } });
     }
     if (events.length === 0) return;
 
@@ -875,6 +909,97 @@ async function recordActivity(userId, movieId, before, after) {
         }
     }
 }
+
+// ---------- Reseñas (MongoDB): búsqueda, edición y borrado ----------
+
+const REVIEWS_PER_PAGE = 12;
+
+app.get('/resenas', async (req, res) => {
+    const query = typeof req.query.q === 'string' ? req.query.q.trim().slice(0, 100) : '';
+    const page = Number(req.query.page || 1);
+    if (!Number.isInteger(page) || page < 1 || page > 500) return res.status(400).send('Página inválida.');
+    try {
+        const result = await (app.locals.reviewStore || reviewStore).searchReviews({
+            text: query, limit: REVIEWS_PER_PAGE, skip: (page - 1) * REVIEWS_PER_PAGE,
+        });
+        res.render('resenas', {
+            available: Boolean(result), reviews: result?.items || [], total: result?.total || 0,
+            query, page, totalPages: Math.max(1, Math.ceil((result?.total || 0) / REVIEWS_PER_PAGE)),
+            notice: { editada: 'Tu reseña se actualizó.', borrada: 'Tu reseña se borró.' }[req.query.listo] || null,
+        });
+    } catch (err) {
+        console.warn('No se pudieron buscar las reseñas en MongoDB:', err.message);
+        res.render('resenas', { available: false, reviews: [], total: 0, query, page: 1, totalPages: 1, notice: null });
+    }
+});
+
+// Busca la reseña y comprueba que sea del usuario logueado.
+async function ownReview(req, res) {
+    const review = await (app.locals.reviewStore || reviewStore).findReview(req.params.id);
+    if (!review) {
+        res.status(404).send('Reseña no encontrada.');
+        return null;
+    }
+    if (review.userId !== res.locals.currentUser.user_id) {
+        res.status(403).send('Solo podés modificar tus propias reseñas.');
+        return null;
+    }
+    return review;
+}
+
+app.get('/resenas/:id/editar', requireAuth, async (req, res) => {
+    try {
+        const review = await ownReview(req, res);
+        if (review) res.render('resena_editar', { review, error: null });
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al cargar la reseña.');
+    }
+});
+
+app.post('/resenas/:id/editar', requireAuth, async (req, res) => {
+    try {
+        const review = await ownReview(req, res);
+        if (!review) return;
+        const text = typeof req.body.text === 'string' ? req.body.text.trim() : '';
+        const ratingText = typeof req.body.rating === 'string' ? req.body.rating.trim() : '';
+        const rating = ratingText === '' ? null : Number(ratingText);
+        const invalid = !text ? 'La reseña no puede quedar vacía.'
+            : text.length > 1000 ? 'La reseña admite hasta 1000 caracteres.'
+            : rating !== null && !/^[1-5]$/.test(ratingText) ? 'La puntuación debe ser un número del 1 al 5.' : null;
+        if (invalid) return res.status(400).render('resena_editar', { review: { ...review, text, rating }, error: invalid });
+
+        const { userId, movieId } = review;
+        const previous = (await db.query('SELECT rating, opinion, is_favorite FROM movie_user WHERE user_id = $1 AND movie_id = $2',
+            [userId, movieId])).rows[0] || { rating: null, opinion: null, is_favorite: false };
+        await db.query(`INSERT INTO movie_user (user_id, movie_id, rating, opinion) VALUES ($1, $2, $3, $4)
+            ON CONFLICT (user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating, opinion = EXCLUDED.opinion`,
+            [userId, movieId, rating, text]);
+        const reviewId = await syncReview(userId, movieId);
+        await recordActivity(userId, movieId, previous, { rating, opinion: text, is_favorite: previous.is_favorite }, { reviewId });
+        res.redirect('/resenas?listo=editada');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al actualizar la reseña.');
+    }
+});
+
+app.post('/resenas/:id/eliminar', requireAuth, async (req, res) => {
+    try {
+        const review = await ownReview(req, res);
+        if (!review) return;
+        const { userId, movieId } = review;
+        // Borrar la reseña quita la puntuación y la opinión; la favorita y el estado se conservan.
+        await db.query('UPDATE movie_user SET rating = NULL, opinion = NULL WHERE user_id = $1 AND movie_id = $2', [userId, movieId]);
+        await db.query(`DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2
+            AND rating IS NULL AND opinion IS NULL AND NOT is_favorite AND watch_status IS NULL`, [userId, movieId]);
+        await syncReview(userId, movieId);
+        res.redirect('/resenas?listo=borrada');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error al borrar la reseña.');
+    }
+});
 
 // Una película que solo está en TMDB se guarda en la tabla movie recién cuando un usuario interactúa con ella,
 // así la clave foránea de movie_user sigue siendo válida. Devuelve false si TMDB tampoco la tiene.
@@ -982,9 +1107,11 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
             // Si la reseña quedó vacía y no hay favorita ni estado, la relación ya no guarda nada.
             await db.query(`DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2
                 AND rating IS NULL AND opinion IS NULL AND NOT is_favorite AND watch_status IS NULL`, [userId, movieId]);
-            await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: previous.is_favorite });
+            const reviewId = await syncReview(userId, movieId);
+            await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: previous.is_favorite }, { reviewId });
         } else if (remove || (!favorite && !watchStatus && rating === null && !opinion)) {
             await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = $2', [userId, movieId]);
+            await syncReview(userId, movieId);
         } else {
             await db.query(`INSERT INTO movie_user (user_id, movie_id, rating, opinion, is_favorite, watch_status)
                 VALUES ($1, $2, $3, $4, $5, $6)
@@ -992,7 +1119,8 @@ app.post(['/pelicula/:id/calificar', '/pelicula/:id/interaccion'], requireAuth, 
                 rating = EXCLUDED.rating, opinion = EXCLUDED.opinion,
                 is_favorite = EXCLUDED.is_favorite, watch_status = EXCLUDED.watch_status`,
                 [userId, movieId, rating, opinion, favorite, watchStatus]);
-            await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: favorite });
+            const reviewId = await syncReview(userId, movieId);
+            await recordActivity(userId, movieId, previous, { rating, opinion, is_favorite: favorite }, { reviewId });
         }
         res.redirect(`/pelicula/${movieId}#rate-heading`);
     } catch (err) {

@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head><%- include('partials/head', { pageTitle: 'Editar reseña' }) %></head>
+<body>
+<%- include('partials/header') %>
+<main class="page">
+    <div class="container">
+        <header class="page-header">
+            <p class="eyebrow">Reseñas</p>
+            <h1>Editar tu reseña</h1>
+            <p>de <a href="/pelicula/<%= review.movieId %>"><%= review.movieTitle || 'la película' %></a></p>
+        </header>
+
+        <form class="form-card" action="/resenas/<%= review._id %>/editar" method="POST">
+            <% if (error) { %><p class="alert" role="alert"><%= error %></p><% } %>
+            <div class="field">
+                <label for="review-rating">Puntuación</label>
+                <select class="select" id="review-rating" name="rating">
+                    <option value="">Sin puntuación</option>
+                    <% for (let stars = 5; stars >= 1; stars--) { %>
+                        <option value="<%= stars %>" <%= review.rating === stars ? 'selected' : '' %>><%= '★'.repeat(stars) %> (<%= stars %>)</option>
+                    <% } %>
+                </select>
+            </div>
+            <div class="field">
+                <label for="review-text">Reseña</label>
+                <textarea class="textarea" id="review-text" name="text" rows="6" maxlength="1000" required><%= review.text %></textarea>
+            </div>
+            <div class="form-actions">
+                <button class="btn" type="submit">Guardar cambios</button>
+                <a class="btn btn-ghost" href="/resenas">Cancelar</a>
+            </div>
+        </form>
+    </div>
+</main>
+<%- include('partials/footer') %>
+</body>
+</html>
