@@ -214,7 +214,7 @@ test('search incorporates movies from TMDB that are missing in the database', as
         assert.equal(first.status, 200);
         const html = await first.text();
         assert.match(html, /Zzqx Estreno De Prueba/);
-        assert.match(html, /Agregamos 1 película nueva desde TMDB/);
+        assert.doesNotMatch(html, /Agregamos/, 'no se muestra ningún aviso');
         assert.match(html, new RegExp(`href="/pelicula/${newId}"`));
         assert.doesNotMatch(html, /Zzqx Sin Votos/, 'no incorpora películas con muy pocos votos');
         assert.deepEqual(searched, ['Zzqx']);

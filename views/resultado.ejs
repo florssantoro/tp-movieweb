@@ -23,10 +23,6 @@ const hasResults = movies.length || genreMovies.length || keywordMovies.length |
             <p class="empty">Ingresá una película, persona o tema para buscar.</p>
         <% } else { %>
 
-        <% if (locals.importedCount) { %>
-            <p class="notice">Agregamos <%= locals.importedCount === 1 ? '1 película nueva' : `${locals.importedCount} películas nuevas` %> desde TMDB porque no estaban en la base.</p>
-        <% } %>
-
         <% if (!hasResults) { %>
             <p class="empty">No encontramos coincidencias. Probá con otro título, nombre o tema.</p>
         <% } else { %>
