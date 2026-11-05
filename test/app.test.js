@@ -136,6 +136,19 @@ test('legacy keyword routes redirect to the unified search', async () => {
     assert.equal(results.headers.get('location'), '/buscar?tipo=keyword&q=space%20travel');
 });
 
+test('unified keyword search uses the search_keyword and resultados_keyword views', async () => {
+    const start = await (await fetch(`${baseUrl}/buscar?tipo=keyword`)).text();
+    assert.match(start, /id="keyword-start-heading">Buscá películas por tema/);
+    assert.match(start, /href="\/buscar\?tipo=keyword&amp;q=/, 'sugiere palabras clave populares');
+
+    const keyword = (await db.query(`SELECT k.keyword_name, COUNT(*)::int AS movies FROM keyword k
+        JOIN movie_keywords mk ON mk.keyword_id = k.keyword_id GROUP BY k.keyword_name ORDER BY COUNT(*) DESC LIMIT 1`)).rows[0];
+    const results = await (await fetch(`${baseUrl}/buscar?tipo=keyword&q=${encodeURIComponent(keyword.keyword_name)}`)).text();
+    assert.match(results, /id="keyword-movies-heading"/);
+    const shown = (results.match(/class="tile tile-related"/g) || []).length;
+    assert.ok(shown > 12 || shown === keyword.movies, 'buscando solo por palabra clave se muestran más de 12 películas');
+});
+
 test('unified search handles unmatched and wildcard queries', async () => {
     const unmatched = await fetch(`${baseUrl}/buscar?q=zzzz-no-existe-zzzz`);
     assert.equal(unmatched.status, 200);

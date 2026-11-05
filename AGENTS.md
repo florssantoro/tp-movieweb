@@ -4,7 +4,8 @@
 
 - The application uses Node.js, Express, EJS, PostgreSQL, and MongoDB.
 - Run it with `npm start` and verify changes with `npm test`.
-- MongoDB stores only the user activity timeline (`activity.js`, collection `user_activity`); PostgreSQL remains the source of truth for users and interactions.
+- MongoDB stores the user activity timeline (`activity.js`, collection `user_activity`) and review documents (`reviews.js`, collection `reviews`); PostgreSQL remains the source of truth for users and interactions, and reviews are synced to MongoDB on every change.
+- Set up or reset the local databases with `npm run dev:setup`, `npm run dev:reset` and `npm run dev:drop`.
 - Keep credentials in the local `.env` file. Never commit secrets or API tokens.
 
 ## Shared Skills

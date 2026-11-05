@@ -1,0 +1,25 @@
+<%#
+    Resultados de la búsqueda por palabra clave (consigna 2.4).
+    Es una parte de la página de resultados del buscador unificado (resultado.ejs):
+    se muestra cuando se busca en "Todo" o en "Palabras clave".
+    Recibe keywordMovies: películas con alguna palabra clave que coincide (y cuáles coinciden, en "keywords").
+%>
+<% if (keywordMovies.length) { %>
+<section class="section" aria-labelledby="keyword-movies-heading">
+    <h2 class="section-title" id="keyword-movies-heading">Películas relacionadas <span class="count"><%= keywordMovies.length %></span></h2>
+    <ul class="tile-grid">
+        <% keywordMovies.forEach((movie) => { %>
+            <li>
+                <a class="tile tile-related" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
+                    <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
+                    <span class="tile-related-copy">
+                        <span class="tile-match" aria-label="Tema relacionado: <%= movie.keywords %>"><%= movie.keywords %></span>
+                        <span class="tile-title"><%= movie.title %></span>
+                        <span class="tile-meta"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : 'Año desconocido' %></span>
+                    </span>
+                </a>
+            </li>
+        <% }); %>
+    </ul>
+</section>
+<% } %>

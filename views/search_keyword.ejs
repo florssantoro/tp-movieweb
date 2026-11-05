@@ -1,0 +1,17 @@
+<%#
+    Búsqueda por palabra clave (consigna 2.4).
+    Es una parte de la página de resultados del buscador unificado (resultado.ejs):
+    aparece cuando se elige "Palabras clave" en el buscador del header y todavía no se escribió nada.
+    Recibe popularKeywords: las palabras clave con más películas, para empezar con un clic.
+%>
+<section class="section keyword-start" aria-labelledby="keyword-start-heading">
+    <h2 class="section-title" id="keyword-start-heading">Buscá películas por tema</h2>
+    <p class="muted">Escribí una palabra clave en el buscador de arriba (por ejemplo <em>time travel</em>, <em>prison</em> o <em>dystopia</em>) o elegí una de las más usadas:</p>
+    <% if (popularKeywords.length) { %>
+        <nav class="genre-chips" aria-label="Palabras clave populares">
+            <% popularKeywords.forEach((keyword) => { %>
+                <a href="/buscar?tipo=keyword&amp;q=<%= encodeURIComponent(keyword.keyword_name) %>"><%= keyword.keyword_name %> · <%= keyword.movies %></a>
+            <% }); %>
+        </nav>
+    <% } %>
+</section>

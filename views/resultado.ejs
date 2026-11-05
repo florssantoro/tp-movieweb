@@ -17,7 +17,9 @@ const hasResults = movies.length || genreMovies.length || keywordMovies.length |
             <h1><%= locals.searchQuery ? `Resultados para "${locals.searchQuery}"` : 'Resultado de la búsqueda' %></h1>
         </header>
 
-        <% if (emptySearch) { %>
+        <% if (emptySearch && searchType === 'keyword') { %>
+            <%- include('search_keyword', { popularKeywords: locals.popularKeywords || [] }) %>
+        <% } else if (emptySearch) { %>
             <p class="empty">Ingresá una película, persona o tema para buscar.</p>
         <% } else { %>
 
@@ -64,25 +66,7 @@ const hasResults = movies.length || genreMovies.length || keywordMovies.length |
         </section>
         <% } %>
 
-        <% if (keywordMovies.length) { %>
-        <section class="section" aria-labelledby="keyword-movies-heading">
-            <h2 class="section-title" id="keyword-movies-heading">Películas relacionadas <span class="count"><%= keywordMovies.length %></span></h2>
-            <ul class="tile-grid">
-                <% keywordMovies.forEach((movie) => { %>
-                    <li>
-                        <a class="tile tile-related" href="/pelicula/<%= movie.movie_id %>" style="--hue: <%= (movie.movie_id * 47) % 360 %>">
-                            <img class="tile-poster" src="/poster/<%= movie.movie_id %>" alt="" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')">
-                            <span class="tile-related-copy">
-                                <span class="tile-match" aria-label="Tema relacionado: <%= movie.keywords %>"><%= movie.keywords %></span>
-                                <span class="tile-title"><%= movie.title %></span>
-                                <span class="tile-meta"><%= movie.release_date ? new Date(movie.release_date).getFullYear() : 'Año desconocido' %></span>
-                            </span>
-                        </a>
-                    </li>
-                <% }); %>
-            </ul>
-        </section>
-        <% } %>
+        <%- include('resultados_keyword', { keywordMovies }) %>
 
         <% if (actors.length) { %>
         <section class="section" aria-labelledby="actors-heading">
