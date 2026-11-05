@@ -1,32 +1,43 @@
 <!DOCTYPE html>
 <html lang="es">
 <head><%- include('partials/head', { pageTitle: 'Descubrí tu próxima película' }) %><script src="/discovery-ui.js" defer></script></head>
-<body>
+<body class="home<%= trending.length ? ' has-hero' : '' %>">
 <%- include('partials/header') %>
-<main class="discovery container" id="main">
-    <header class="discovery-intro"><p class="eyebrow">TU PRÓXIMA GRAN HISTORIA</p><h1>¿Qué vas a ver hoy?</h1><p>Descubrí algo que te atrape. Guardalo para después.</p></header>
-    <section class="trending" aria-labelledby="trending-heading" aria-roledescription="carrusel">
-        <div class="discovery-heading"><div><p class="eyebrow">EN CONVERSACIÓN</p><h2 id="trending-heading">Tendencias de la semana</h2></div><div class="carousel-controls" hidden aria-label="Controles de tendencias">
-            <button type="button" data-prev aria-label="Película anterior" title="Película anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
-            <button type="button" data-pause aria-label="Pausar rotación automática" aria-pressed="false" title="Pausar rotación automática"><svg data-icon-pause viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><svg data-icon-play viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m9 6 9 6-9 6Z"/></svg></button>
-            <button type="button" data-next aria-label="Película siguiente" title="Película siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
-        </div></div>
-        <% if (trending.length) { %>
-        <div class="trailer-track" tabindex="0" aria-label="Películas en tendencia">
-            <% trending.forEach((movie, index) => { %>
-            <article class="trailer-slide" aria-label="<%= index + 1 %> de <%= trending.length %>">
-                <% if (movie.backdropUrl || movie.posterUrl) { %><img class="trailer-backdrop" src="<%= movie.backdropUrl || movie.posterUrl %>" alt="" width="1280" height="720" <%- index ? 'loading="lazy"' : 'fetchpriority="high"' %>><% } %>
-                <div class="trailer-copy"><p class="eyebrow">TENDENCIA <%= String(index + 1).padStart(2,'0') %> / <%= String(trending.length).padStart(2,'0') %></p><h3><%= movie.title %></h3><p class="trailer-overview"><%= movie.overview || 'Una nueva historia para descubrir.' %></p>
-                    <div class="form-actions">
-                        <% if (movie.trailerEmbedUrl) { %><a class="btn" data-play="<%= movie.trailerEmbedUrl %>" href="<%= movie.trailerUrl %>" target="_blank" rel="noopener noreferrer">Ver tráiler <span aria-hidden="true">▶</span></a><% } else { %><span class="muted">Tráiler no disponible</span><% } %>
-                        <a class="btn btn-ghost" href="/pelicula/<%= movie.movie_id %>">Ver película</a>
-                    </div>
+<% const pad = (value) => String(value).padStart(2, '0'); %>
+<% if (trending.length) { %>
+<section class="home-hero trending" aria-labelledby="trending-heading" aria-roledescription="carrusel">
+    <h1 class="visually-hidden">¿Qué vas a ver hoy?</h1>
+    <h2 class="visually-hidden" id="trending-heading">Tendencias de la semana</h2>
+    <div class="trailer-track" tabindex="0" aria-label="Películas en tendencia">
+        <% trending.forEach((movie, index) => { %>
+        <% const year = /^\d{4}/.test(movie.release_date || '') ? movie.release_date.slice(0, 4) : null; %>
+        <% const score = Number(movie.vote_average) > 0 ? Number(movie.vote_average).toFixed(1) : null; %>
+        <article class="trailer-slide" aria-label="<%= index + 1 %> de <%= trending.length %>">
+            <% if (movie.backdropUrl || movie.posterUrl) { %><img class="trailer-backdrop" src="<%= movie.backdropUrl || movie.posterUrl %>" alt="" width="1280" height="720" <%- index ? 'loading="lazy"' : 'fetchpriority="high"' %>><% } %>
+            <div class="trailer-copy">
+                <p class="eyebrow"><span class="home-hero-tag">En tendencia</span> <%= pad(index + 1) %> / <%= pad(trending.length) %></p>
+                <h3><%= movie.title %></h3>
+                <% if (year || score) { %><p class="home-hero-meta"><% if (year) { %><span><%= year %></span><% } %><% if (score) { %><span><span class="stars" aria-hidden="true">★</span> <%= score %></span><% } %></p><% } %>
+                <p class="trailer-overview"><%= movie.overview || 'Una nueva historia para descubrir.' %></p>
+                <div class="form-actions">
+                    <% if (movie.trailerEmbedUrl) { %><a class="btn" data-play="<%= movie.trailerEmbedUrl %>" href="<%= movie.trailerUrl %>" target="_blank" rel="noopener noreferrer"><svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 12 7-12 7Z"/></svg>Ver tráiler</a><% } else { %><span class="muted">Tráiler no disponible</span><% } %>
+                    <a class="btn btn-ghost" href="/pelicula/<%= movie.movie_id %>">Ver película</a>
                 </div>
-            </article><% }); %>
-        </div>
-        <p class="feed-credit">Tendencias en TMDB · Deslizá para explorar</p>
-        <% } else { %><div class="discovery-empty"><h3>Las tendencias vuelven pronto.</h3><p>Mientras tanto, explorá las mejores historias de nuestro catálogo.</p><a href="#top-rated">Ver mejor puntuadas ↓</a></div><% } %>
-    </section>
+            </div>
+        </article><% }); %>
+    </div>
+    <div class="carousel-controls home-hero-controls" hidden aria-label="Controles de tendencias">
+        <button type="button" data-prev aria-label="Película anterior" title="Película anterior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button>
+        <button type="button" data-pause aria-label="Pausar rotación automática" aria-pressed="false" title="Pausar rotación automática"><svg data-icon-pause viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg><svg data-icon-play viewBox="0 0 24 24" aria-hidden="true" hidden><path d="m9 6 9 6-9 6Z"/></svg></button>
+        <button type="button" data-next aria-label="Película siguiente" title="Película siguiente"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button>
+    </div>
+</section>
+<% } %>
+<main class="discovery container" id="main">
+    <% if (!trending.length) { %>
+    <header class="discovery-intro"><p class="eyebrow">TU PRÓXIMA GRAN HISTORIA</p><h1>¿Qué vas a ver hoy?</h1><p>Descubrí algo que te atrape. Guardalo para después.</p></header>
+    <div class="discovery-empty"><h3>Las tendencias vuelven pronto.</h3><p>Mientras tanto, explorá las mejores historias de nuestro catálogo.</p><a href="#top-rated">Ver mejor puntuadas ↓</a></div>
+    <% } %>
     <section class="discovery-section suggestion-banner"><div><p class="eyebrow">MENOS BUSCAR. MÁS CINE.</p><h2>No sabés qué ver.</h2><p>Elegí un género o algo corto. Nosotros te acercamos las opciones.</p></div><a class="btn" href="/que-ver">Encontrá tu película →</a></section>
     <% if (picks.length && locals.currentUser) { %><section class="discovery-section"><div class="discovery-heading"><div><p class="eyebrow">TU SELECCIÓN</p><h2>Para vos, <%= currentUser.user_username %></h2><p class="muted">Priorizamos tus géneros favoritos y dejamos afuera las que ya viste.</p></div><a href="/que-ver">Ver sugerencias →</a></div><%- include('partials/movie_cards', { movies: picks }) %></section><% } %>
     <section class="discovery-section" id="genres"><div class="discovery-heading"><div><p class="eyebrow">SEGUÍ TU CURIOSIDAD</p><h2>Un género para cada momento</h2></div><div class="carousel-controls genre-rail-controls" hidden aria-label="Controles de géneros"><button type="button" data-genre-prev aria-label="Géneros anteriores" title="Géneros anteriores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg></button><button type="button" data-genre-next aria-label="Más géneros" title="Más géneros"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg></button></div></div><div class="genre-rail" data-genre-track role="region" aria-label="Todos los géneros"><% genres.forEach((g) => { %><a class="genre-card" href="/explorar?genero=<%= g.id %>"><span class="genre-card-media"><% if (g.posterUrl) { %><img class="genre-image" src="<%= g.posterUrl %>" alt="" width="342" height="513" loading="lazy" onerror="this.hidden=true"><% } %><span class="genre-card-action" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></span><span class="genre-card-copy"><h3><%= g.name %></h3><span class="genre-count"><%= g.movieCount ? `${g.movieCount} películas` : 'Explorar género' %></span></span></a><% }); %></div></section>

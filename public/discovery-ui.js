@@ -5,6 +5,7 @@
     const slides = [...track.children];
     const controls = section.querySelector('.carousel-controls');
     const pause = controls.querySelector('[data-pause]');
+    const hoverZones = [controls, ...section.querySelectorAll('.trailer-copy')];
     const reduced = matchMedia('(prefers-reduced-motion: reduce)');
     const dialog = document.querySelector('.trailer-dialog');
     let paused = reduced.matches;
@@ -24,7 +25,7 @@
         pause.setAttribute('aria-pressed', String(paused));
         pause.querySelector('[data-icon-pause]').hidden = paused;
         pause.querySelector('[data-icon-play]').hidden = !paused;
-        if (!paused && !reduced.matches && !document.hidden && !dialog.open && !section.matches(':hover') && slides.length > 1) timer = setInterval(() => move(1), 8000);
+        if (!paused && !reduced.matches && !document.hidden && !dialog.open && !hoverZones.some((zone) => zone.matches(':hover')) && slides.length > 1) timer = setInterval(() => move(1), 8000);
     }
     function moveManually(direction, instant) {
         clearInterval(timer);
@@ -34,8 +35,10 @@
     controls.querySelector('[data-prev]').addEventListener('click', (e) => moveManually(-1, e.detail === 0));
     controls.querySelector('[data-next]').addEventListener('click', (e) => moveManually(1, e.detail === 0));
     pause.addEventListener('click', () => { paused = !paused; update(); });
-    section.addEventListener('mouseenter', () => clearInterval(timer));
-    section.addEventListener('mouseleave', update);
+    hoverZones.forEach((zone) => {
+        zone.addEventListener('mouseenter', () => clearInterval(timer));
+        zone.addEventListener('mouseleave', update);
+    });
     section.addEventListener('focusin', () => clearInterval(timer));
     section.addEventListener('focusout', update);
     track.addEventListener('pointerdown', () => clearInterval(timer));
@@ -92,4 +95,20 @@
     if ('ResizeObserver' in window) new ResizeObserver(update).observe(track);
     else window.addEventListener('resize', update);
     update();
+})();
+
+(() => {
+    if (!document.body.classList.contains('has-hero')) return;
+    const header = document.querySelector('.site-header');
+    if (!header) return;
+    // El hero se mete debajo del header: necesita saber cuánto mide (cambia en el celular).
+    const syncHeight = () => document.documentElement.style.setProperty('--header-h', `${header.offsetHeight}px`);
+    const hero = document.querySelector('.home-hero');
+    // Transparente mientras se ve la imagen; oscuro recién cuando empieza el resto de la página.
+    const syncScrolled = () => header.classList.toggle('is-scrolled', window.scrollY > (hero ? hero.offsetHeight - header.offsetHeight - 80 : 24));
+    if ('ResizeObserver' in window) new ResizeObserver(syncHeight).observe(header);
+    else window.addEventListener('resize', syncHeight);
+    window.addEventListener('scroll', syncScrolled, { passive: true });
+    syncHeight();
+    syncScrolled();
 })();

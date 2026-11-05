@@ -102,3 +102,26 @@ test('trending handles unavailable API and rejects adult or invalid entries', as
     assert.equal(movies.length,1);
     assert.equal(movies[0].movie_id,1);
 });
+
+test('suggestions show 24 movies per page and keep the selected mood when paging', async () => {
+    const movieIds = (html) => [...html.matchAll(/class="discovery-card" href="\/pelicula\/(\d+)"/g)].map((match) => match[1]);
+
+    const first = await (await fetch(`${base}/que-ver`)).text();
+    const firstIds = movieIds(first);
+    assert.equal(firstIds.length, 24);
+    assert.match(first, /href="\/que-ver\?animo=&page=2">Siguiente/);
+    assert.doesNotMatch(first, /Anterior/);
+
+    const second = await (await fetch(`${base}/que-ver?page=2`)).text();
+    const secondIds = movieIds(second);
+    assert.ok(secondIds.length > 0);
+    assert.ok(secondIds.every((id) => !firstIds.includes(id)), 'la página 2 no repite películas de la página 1');
+    assert.match(second, /href="\/que-ver\?animo=&page=1">← Anterior/);
+
+    const scary = await (await fetch(`${base}/que-ver?animo=terror&page=2`)).text();
+    assert.match(scary, /href="\/que-ver\?animo=terror&page=1">/);
+
+    for (const page of ['0', '-1', '1.5', 'abc', '501']) {
+        assert.equal((await fetch(`${base}/que-ver?page=${page}`)).status, 400, `page=${page}`);
+    }
+});

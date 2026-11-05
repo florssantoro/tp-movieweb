@@ -523,3 +523,81 @@ test('interaction routes require a logged-in user', async () => {
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('location'), '/login');
 });
+
+test('search suggestions autocomplete movies, people, genres and keywords while typing', async () => {
+    const suggest = async (query) => {
+        const response = await fetch(`${baseUrl}/buscar/sugerencias?${new URLSearchParams(query)}`);
+        return { status: response.status, body: await response.json() };
+    };
+
+    const all = await suggest({ q: 'acc' });
+    assert.equal(all.status, 200);
+    assert.ok(all.body.suggestions.length > 0 && all.body.suggestions.length <= 11);
+    assert.deepEqual(all.body.suggestions[0], { type: 'genre', label: 'Acción', detail: 'Género', url: '/explorar?genero=28' });
+    for (const suggestion of all.body.suggestions) {
+        assert.ok(['genre', 'movie', 'actor', 'director', 'keyword'].includes(suggestion.type));
+        assert.match(suggestion.url, /^\/(pelicula|actor|director|explorar|buscar)[/?]/);
+        assert.ok(suggestion.label && suggestion.detail);
+    }
+
+    const movies = await suggest({ q: 'star', tipo: 'movie' });
+    assert.ok(movies.body.suggestions.length > 0 && movies.body.suggestions.length <= 8);
+    assert.ok(movies.body.suggestions.every((suggestion) => suggestion.type === 'movie'));
+    assert.match(movies.body.suggestions[0].label, /^star/i, 'primero lo que empieza con el texto');
+
+    const keywords = await suggest({ q: 'prison', tipo: 'keyword' });
+    assert.equal(keywords.body.suggestions[0].url, '/buscar?tipo=keyword&q=prison');
+
+    assert.deepEqual((await suggest({ q: 'a' })).body, { suggestions: [] });
+    assert.deepEqual((await suggest({ q: '%%' })).body, { suggestions: [] });
+    assert.equal((await suggest({ q: 'acc', tipo: 'invalido' })).status, 400);
+});
+
+test('pages load the search autocomplete script', async () => {
+    const body = await (await fetch(`${baseUrl}/explorar`)).text();
+    assert.match(body, /<script src="\/search-suggest\.js" defer><\/script>/);
+});
+
+test('a TMDB-only movie shows its full credits and links only people that have a page', async () => {
+    const [actor, director] = await Promise.all([
+        db.query('SELECT p.person_id, p.person_name FROM movie_cast mc JOIN person p ON p.person_id = mc.person_id LIMIT 1'),
+        db.query("SELECT p.person_id, p.person_name FROM movie_crew mc JOIN person p ON p.person_id = mc.person_id WHERE mc.job = 'Director' LIMIT 1"),
+    ]);
+    const known = actor.rows[0];
+    const knownDirector = director.rows[0];
+    const remoteId = 2100000077;
+    assert.equal((await db.query('SELECT 1 FROM movie WHERE movie_id = $1', [remoteId])).rowCount, 0);
+
+    app.locals.loadTmdbMovie = async (movieId) => (movieId !== remoteId ? null : {
+        movie: { movie_id: remoteId, title: 'Remota de prueba', release_date: '2026-01-01', runtime: 99 },
+        genres: [{ genre_name: 'Drama' }],
+        cast: [
+            { person_id: known.person_id, person_name: known.person_name, character_name: 'Protagonista', cast_order: 0 },
+            { person_id: 2100000099, person_name: 'Actriz Sin Ficha', character_name: 'Secundaria', cast_order: 1 },
+        ],
+        crew: [
+            { person_id: knownDirector.person_id, person_name: knownDirector.person_name, job: 'Director', department_name: 'Directing' },
+            { person_id: 2100000098, person_name: 'Directora Sin Ficha', job: 'Director', department_name: 'Directing' },
+            { person_id: 2100000097, person_name: 'Fotógrafo Remoto', job: 'Director of Photography', department_name: 'Camera' },
+        ],
+        countries: [{ country_name: 'Argentina', country_iso_code: 'AR' }],
+        languages: [{ language_name: 'Español', language_code: 'es', language_role: 'Original' }],
+        companies: [{ company_name: 'Productora Remota' }],
+        keywords: [{ keyword_name: 'remote keyword' }],
+        overview: null, posterUrl: null, trailerUrl: null, trailerEmbedUrl: null,
+    });
+
+    const response = await fetch(`${baseUrl}/pelicula/${remoteId}`);
+    const body = await response.text();
+
+    assert.equal(response.status, 200);
+    assert.doesNotMatch(body, /Sin datos de elenco/);
+    assert.match(body, new RegExp(`href="/actor/${known.person_id}"`));
+    assert.match(body, new RegExp(`href="/director/${knownDirector.person_id}"`));
+    assert.match(body, /<span>Actriz Sin Ficha<\/span>/);
+    assert.match(body, /<span>Directora Sin Ficha<\/span>/);
+    assert.doesNotMatch(body, /href="\/(actor|director)\/21000000(99|98)"/);
+    for (const value of ['Protagonista', 'Fotógrafo Remoto', 'Argentina', 'Español (Original)', 'Productora Remota', 'remote keyword']) {
+        assert.ok(body.includes(value), `falta "${value}" en la ficha`);
+    }
+});
