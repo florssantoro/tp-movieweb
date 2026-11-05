@@ -64,7 +64,7 @@ Este script (`scripts/dev-setup.js`):
 
 Se puede correr las veces que haga falta: no borra ni duplica datos.
 
-**Usuarios de prueba:** `demo_ana` y `demo_bruno`, los dos con la contraseña `movieweb123`.
+**Usuarios de prueba** (todos con la contraseña `movieweb123`): `demo_ana`, `demo_bruno`, `sofi.cine`, `nico_films`, `cami.martinez`, `juanpi.rojas`, `lu.fernandez` y `tomi.vera`. Tienen 48 películas guardadas y 41 reseñas, para ver la app con datos.
 
 Otros comandos útiles para la corrección:
 
