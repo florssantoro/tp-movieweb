@@ -4,6 +4,13 @@ const assert = require('node:assert/strict');
 // Los tests no usan el MongoDB real: sin MONGO_URL, activity.js no se conecta.
 process.env.MONGO_URL = '';
 const { app, db } = require('../app');
+const { searchTmdbMovies, getTmdbPerson } = require('../tmdb');
+
+// Los tests no llaman a TMDB: por defecto la búsqueda en TMDB no encuentra nada.
+const noTmdbResults = async () => [];
+app.locals.searchTmdbMovies = noTmdbResults;
+const noTmdbPerson = async () => null;
+app.locals.loadTmdbPerson = noTmdbPerson;
 
 let baseUrl;
 let server;
@@ -28,6 +35,8 @@ afterEach(() => {
     delete app.locals.loadTmdbPersonPhoto;
     delete app.locals.loadRatingUsers;
     delete app.locals.deleteUserActivity;
+    app.locals.searchTmdbMovies = noTmdbResults;
+    app.locals.loadTmdbPerson = noTmdbPerson;
 });
 
 test('static assets are served but EJS templates are not', async () => {
@@ -149,6 +158,28 @@ test('unified keyword search uses the search_keyword and resultados_keyword view
     assert.ok(shown > 12 || shown === keyword.movies, 'buscando solo por palabra clave se muestran más de 12 películas');
 });
 
+test('search ignores accents and letter case', async () => {
+    const movieId = 2147480300;
+    await db.query('DELETE FROM movie WHERE movie_id = $1', [movieId]);
+    await db.query("INSERT INTO movie (movie_id, title, vote_count) VALUES ($1, 'Zzqé Canción del Ñandú', 5)", [movieId]);
+    try {
+        for (const query of ['zzqe cancion del nandu', 'ZZQÉ CANCIÓN', 'Zzqé Canción del Ñandú', 'ñandú', 'NANDU']) {
+            const html = await (await fetch(baseUrl + '/buscar?q=' + encodeURIComponent(query))).text();
+            assert.match(html, new RegExp('href="/pelicula/' + movieId + '"'), query);
+        }
+        const suggestions = await (await fetch(baseUrl + '/buscar/sugerencias?tipo=movie&q=' + encodeURIComponent('zzqe canc'))).json();
+        assert.equal(suggestions.suggestions[0]?.url, '/pelicula/' + movieId);
+        const byWord = await (await fetch(baseUrl + '/buscar/sugerencias?tipo=movie&q=' + encodeURIComponent('nandu'))).json();
+        assert.ok(byWord.suggestions.some((suggestion) => suggestion.url === '/pelicula/' + movieId), 'también por una palabra del medio');
+
+        // Los comodines de LIKE se siguen tratando como texto.
+        const wildcard = await (await fetch(baseUrl + '/buscar?q=' + encodeURIComponent('zzq_'))).text();
+        assert.doesNotMatch(wildcard, new RegExp('href="/pelicula/' + movieId + '"'));
+    } finally {
+        await db.query('DELETE FROM movie WHERE movie_id = $1', [movieId]);
+    }
+});
+
 test('unified search handles unmatched and wildcard queries', async () => {
     const unmatched = await fetch(`${baseUrl}/buscar?q=zzzz-no-existe-zzzz`);
     assert.equal(unmatched.status, 200);
@@ -157,6 +188,101 @@ test('unified search handles unmatched and wildcard queries', async () => {
     const wildcard = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent('%')}`);
     assert.equal(wildcard.status, 200);
     assert.doesNotMatch(await wildcard.text(), /href="\/pelicula\//);
+});
+
+test('search incorporates movies from TMDB that are missing in the database', async () => {
+    const newId = 2147480001;
+    const fewVotesId = 2147480002;
+    const cleanup = async () => {
+        await db.query('DELETE FROM movie_genres WHERE movie_id = ANY($1::int[])', [[newId, fewVotesId]]);
+        await db.query('DELETE FROM movie WHERE movie_id = ANY($1::int[])', [[newId, fewVotesId]]);
+    };
+    await cleanup();
+    const searched = [];
+    app.locals.searchTmdbMovies = async (term) => {
+        searched.push(term);
+        return [
+            { movie_id: newId, title: 'Zzqx Estreno De Prueba', overview: 'Una película nueva.', release_date: '2026-10-01',
+                popularity: 52.5, vote_average: 7.456, vote_count: 120, genre_ids: [18, 999999] },
+            { movie_id: fewVotesId, title: 'Zzqx Sin Votos', overview: null, release_date: null,
+                popularity: 0.6, vote_average: 0, vote_count: 2, genre_ids: [] },
+        ];
+    };
+
+    try {
+        const first = await fetch(`${baseUrl}/buscar?q=${encodeURIComponent('Zzqx')}`);
+        assert.equal(first.status, 200);
+        const html = await first.text();
+        assert.match(html, /Zzqx Estreno De Prueba/);
+        assert.match(html, /Agregamos 1 película nueva desde TMDB/);
+        assert.match(html, new RegExp(`href="/pelicula/${newId}"`));
+        assert.doesNotMatch(html, /Zzqx Sin Votos/, 'no incorpora películas con muy pocos votos');
+        assert.deepEqual(searched, ['Zzqx']);
+
+        const saved = await db.query('SELECT title, overview, release_date::text AS release_date, vote_average, vote_count FROM movie WHERE movie_id = $1', [newId]);
+        assert.deepEqual(saved.rows[0], { title: 'Zzqx Estreno De Prueba', overview: 'Una película nueva.',
+            release_date: '2026-10-01', vote_average: '7.46', vote_count: 120 });
+        const genres = await db.query('SELECT genre_id FROM movie_genres WHERE movie_id = $1', [newId]);
+        assert.deepEqual(genres.rows, [{ genre_id: 18 }], 'guarda solo los géneros que existen en la base');
+        assert.equal((await db.query('SELECT 1 FROM movie WHERE movie_id = $1', [fewVotesId])).rowCount, 0);
+
+        // La segunda vez ya está en la base: no se duplica ni vuelve a avisar.
+        const second = await (await fetch(`${baseUrl}/buscar?q=${encodeURIComponent('Zzqx')}`)).text();
+        assert.match(second, /Zzqx Estreno De Prueba/);
+        assert.doesNotMatch(second, /Agregamos/);
+        assert.equal((await db.query('SELECT COUNT(*)::int AS n FROM movie_genres WHERE movie_id = $1', [newId])).rows[0].n, 1);
+
+        // Solo se busca en TMDB cuando la búsqueda incluye películas.
+        await fetch(`${baseUrl}/buscar?tipo=actor&q=${encodeURIComponent('Zzqx')}`);
+        assert.equal(searched.length, 2);
+    } finally {
+        await cleanup();
+    }
+});
+
+test('search shows database movies that TMDB finds under another title and survives TMDB errors', async () => {
+    const existing = (await db.query('SELECT movie_id, title FROM movie WHERE title ~ $1 ORDER BY movie_id LIMIT 1', ['^[A-Za-z ]+$'])).rows[0];
+    assert.ok(existing, 'La base debe tener al menos una película.');
+    app.locals.searchTmdbMovies = async () => [{ ...existing, overview: null, release_date: null,
+        popularity: 1, vote_average: 5, vote_count: 500, genre_ids: [] }];
+    const html = await (await fetch(`${baseUrl}/buscar?q=${encodeURIComponent('qqzz titulo en otro idioma')}`)).text();
+    assert.match(html, new RegExp(`href="/pelicula/${existing.movie_id}"`));
+    assert.doesNotMatch(html, /Agregamos/);
+
+    app.locals.searchTmdbMovies = async () => { throw new Error('TMDB caído'); };
+    const failed = await fetch(`${baseUrl}/buscar?q=zzzz-no-existe-zzzz`);
+    assert.equal(failed.status, 200);
+    assert.match(await failed.text(), /No encontramos coincidencias/);
+});
+
+test('TMDB movie search maps results, skips adult ones and caches each query', async () => {
+    const requests = [];
+    const fetchImpl = async (url) => {
+        requests.push(url);
+        return { ok: true, json: async () => ({ results: [
+            { id: 1001, title: 'Nueva', overview: '  Sinopsis  ', release_date: '2026-09-30', popularity: 12.3, vote_average: 8.1, vote_count: 40, genre_ids: [18, 'x'] },
+            { id: 1002, title: 'Adulta', adult: true, vote_count: 99 },
+            { id: 'malo', title: 'Id inválido' },
+            { id: 1003, title: 'Sin fecha', release_date: '', vote_count: 5 },
+        ] }) };
+    };
+    const cache = new Map();
+    const results = await searchTmdbMovies('  Nueva  ', { apiKey: 'test-key', fetchImpl, cache });
+    assert.deepEqual(results, [
+        { movie_id: 1001, title: 'Nueva', overview: 'Sinopsis', release_date: '2026-09-30', popularity: 12.3, vote_average: 8.1, vote_count: 40, genre_ids: [18] },
+        { movie_id: 1003, title: 'Sin fecha', overview: null, release_date: null, popularity: null, vote_average: null, vote_count: 5, genre_ids: [] },
+    ]);
+    assert.equal(requests[0].searchParams.get('query'), 'Nueva');
+    assert.equal(requests[0].searchParams.get('include_adult'), 'false');
+    assert.deepEqual(await searchTmdbMovies('nueva', { apiKey: 'test-key', fetchImpl, cache }), results);
+    assert.equal(requests.length, 1, 'la segunda búsqueda sale de la caché');
+
+    assert.deepEqual(await searchTmdbMovies('x', { apiKey: 'test-key', fetchImpl, cache }), []);
+    assert.deepEqual(await searchTmdbMovies('Nueva', { apiKey: '', fetchImpl, cache: new Map() }), []);
+    const failing = async () => ({ ok: false, status: 500 });
+    const failCache = new Map();
+    assert.deepEqual(await searchTmdbMovies('Nueva', { apiKey: 'test-key', fetchImpl: failing, cache: failCache }), []);
+    assert.equal(failCache.size, 0, 'un error no se guarda en la caché');
 });
 
 test('actor profile includes films and character roles', async () => {
@@ -195,12 +321,129 @@ test('director profile includes films and role', async () => {
     assert.match(body, new RegExp(`src="/persona/${director.rows[0].person_id}/foto"`));
 });
 
+test('each person has a single page with acting and directing credits', async () => {
+    const both = (await db.query("SELECT person_id FROM movie_crew WHERE job = 'Director' AND person_id IN (SELECT person_id FROM movie_cast) ORDER BY person_id LIMIT 1")).rows[0];
+    assert.ok(both, 'La base debe tener alguien que actúe y dirija.');
+
+    // Las direcciones viejas llevan a la página única.
+    for (const route of ['actor', 'director']) {
+        const response = await fetch(baseUrl + '/' + route + '/' + both.person_id, { redirect: 'manual' });
+        assert.equal(response.status, 302, route);
+        assert.equal(response.headers.get('location'), '/persona/' + both.person_id);
+    }
+
+    const html = await (await fetch(baseUrl + '/persona/' + both.person_id)).text();
+    assert.match(html, /<p class="eyebrow">Actor · Director<\/p>/);
+    assert.match(html, /Como actor en MovieWeb/);
+    assert.match(html, /Como director en MovieWeb/);
+    assert.match(html, /<strong>Personaje:<\/strong>/);
+    assert.match(html, /<strong>Rol:<\/strong> Director/);
+});
+
+test('person page adds biography and full career from TMDB', async () => {
+    const both = (await db.query("SELECT person_id FROM movie_crew WHERE job = 'Director' AND person_id IN (SELECT person_id FROM movie_cast) ORDER BY person_id LIMIT 1")).rows[0];
+    const actorOnly = (await db.query("SELECT person_id FROM movie_cast WHERE person_id NOT IN (SELECT person_id FROM movie_crew WHERE job = 'Director') ORDER BY person_id LIMIT 1")).rows[0];
+    const requested = [];
+    const fakePerson = (knownFor) => ({
+        name: 'Persona', biography: 'Primer párrafo de la biografía.\n\nSegundo <b>párrafo</b>.', biographyLanguage: 'es',
+        knownFor, gender: 'female', birthday: '25 de mayo de 1976', deathday: null, age: 49,
+        placeOfBirth: 'Córdoba, Argentina', alsoKnownAs: ['Otra Persona'],
+        acting: [{ movie_id: 2147480010, title: 'Película Solo En TMDB', release_date: null, year: null, role: 'Ella misma' }],
+        directing: Array.from({ length: 12 }, (_, i) => ({ movie_id: 2147480100 + i, title: 'Dirigida ' + (i + 1), release_date: '2020-01-01', year: 2020, role: 'Dirección' })),
+        otherCrew: [{ movie_id: 2147480200, title: 'Escrita', release_date: '2019-01-01', year: 2019, role: 'Guion, Producción' }],
+        links: [{ label: 'TMDB', url: 'https://www.themoviedb.org/person/1' }, { label: 'IMDb', url: 'https://www.imdb.com/name/nm1/' }],
+    });
+    app.locals.loadTmdbPerson = async (personId) => { requested.push(personId); return fakePerson('Dirección'); };
+
+    const html = await (await fetch(baseUrl + '/persona/' + both.person_id)).text();
+    assert.deepEqual(requested, [both.person_id]);
+    assert.match(html, /<p class="eyebrow">Actriz · Directora<\/p>/);
+    assert.match(html, /Conocida por: Dirección/);
+    assert.match(html, /Nació el 25 de mayo de 1976 \(49 años\) en Córdoba, Argentina/);
+    assert.match(html, /Biografía/);
+    assert.match(html, /Segundo &lt;b&gt;párrafo&lt;\/b&gt;\./, 'la biografía se escapa');
+    assert.match(html, /Otros nombres:<\/strong> Otra Persona/);
+    assert.match(html, /href="https:\/\/www\.imdb\.com\/name\/nm1\/"/);
+    assert.match(html, /<strong>Rol:<\/strong> Director/, 'sigue mostrando las películas de la base');
+    assert.ok(html.indexOf('Como directora en MovieWeb') < html.indexOf('Como actriz en MovieWeb'), 'si es conocida por dirigir, la dirección va primero');
+    const career = html.slice(html.indexOf('Carrera completa'));
+    assert.ok(career.length > 20, 'muestra la carrera completa');
+    assert.ok(career.indexOf('Como directora') < career.indexOf('Como actriz'));
+    assert.match(career, /href="\/pelicula\/2147480010"/);
+    assert.match(career, /Próx\./);
+    assert.match(career, /Ver 2 más/);
+    assert.match(career, /Guion, Producción/);
+
+    app.locals.loadTmdbPerson = async () => fakePerson('Actuación');
+    const actingFirst = await (await fetch(baseUrl + '/persona/' + both.person_id)).text();
+    assert.ok(actingFirst.indexOf('Como actriz en MovieWeb') < actingFirst.indexOf('Como directora en MovieWeb'), 'si es conocida por actuar, la actuación va primero');
+
+    // Si TMDB no responde, la página se ve igual, solo con los datos de la base.
+    app.locals.loadTmdbPerson = async () => { throw new Error('TMDB caído'); };
+    const fallback = await fetch(baseUrl + '/persona/' + actorOnly.person_id);
+    assert.equal(fallback.status, 200);
+    const fallbackHtml = await fallback.text();
+    assert.match(fallbackHtml, /<p class="eyebrow">Actor<\/p>/);
+    assert.match(fallbackHtml, /Como actor en MovieWeb/);
+    assert.doesNotMatch(fallbackHtml, /Biografía|Carrera completa|Como director en MovieWeb/);
+});
+
+test('TMDB person loader groups credits and formats personal data', async () => {
+    const requests = [];
+    const fetchImpl = async (url) => {
+        requests.push(url);
+        if (url.searchParams.get('language') === 'en-US') return { ok: true, status: 200, json: async () => ({ biography: 'English bio.' }) };
+        return { ok: true, status: 200, json: async () => ({
+            id: 525, name: 'Christopher Nolan', biography: '', birthday: '1970-07-30', deathday: null, gender: 2,
+            place_of_birth: 'London', known_for_department: 'Directing', also_known_as: ['Chris Nolan', ''],
+            external_ids: { imdb_id: 'nm0634240', instagram_id: '' },
+            movie_credits: {
+                cast: [{ id: 1, title: 'Cameo', character: 'Él mismo', release_date: '2000-01-01' },
+                    { id: 1, title: 'Cameo', character: 'Voz', release_date: '2000-01-01' },
+                    { id: 9, title: 'Adulta', adult: true }],
+                crew: [{ id: 2, title: 'Oppenheimer', job: 'Director', release_date: '2023-07-19' },
+                    { id: 2, title: 'Oppenheimer', job: 'Screenplay', release_date: '2023-07-19' },
+                    { id: 2, title: 'Oppenheimer', job: 'Producer', release_date: '2023-07-19' },
+                    { id: 3, title: 'Sin estrenar', job: 'Director', release_date: '' },
+                    { id: 'x', title: 'Inválida', job: 'Director' }],
+            },
+        }) };
+    };
+    const cache = new Map();
+    const person = await getTmdbPerson(525, { apiKey: 'test-key', fetchImpl, cache, now: new Date(Date.UTC(2026, 10, 5)) });
+    assert.equal(requests[0].searchParams.get('append_to_response'), 'movie_credits,external_ids');
+    assert.equal(person.biography, 'English bio.');
+    assert.equal(person.biographyLanguage, 'en');
+    assert.equal(person.knownFor, 'Dirección');
+    assert.equal(person.gender, 'male');
+    assert.equal(person.birthday, '30 de julio de 1970');
+    assert.equal(person.age, 56);
+    assert.deepEqual(person.alsoKnownAs, ['Chris Nolan']);
+    assert.deepEqual(person.acting, [{ movie_id: 1, title: 'Cameo', release_date: '2000-01-01', year: 2000, role: 'Él mismo / Voz' }]);
+    assert.deepEqual(person.directing.map((c) => c.title), ['Sin estrenar', 'Oppenheimer']);
+    assert.deepEqual(person.otherCrew, [{ movie_id: 2, title: 'Oppenheimer', release_date: '2023-07-19', year: 2023, role: 'Guion, Producción' }]);
+    assert.deepEqual(person.links.map((l) => l.label), ['TMDB', 'IMDb']);
+
+    assert.equal(await getTmdbPerson(525, { apiKey: 'test-key', fetchImpl, cache }), person);
+    assert.equal(requests.length, 2, 'la segunda vez sale de la caché');
+
+    const notFound = async () => ({ ok: false, status: 404 });
+    assert.equal(await getTmdbPerson(7, { apiKey: 'test-key', fetchImpl: notFound, cache: new Map() }), null);
+    const failing = async () => ({ ok: false, status: 500 });
+    const failCache = new Map();
+    assert.equal(await getTmdbPerson(7, { apiKey: 'test-key', fetchImpl: failing, cache: failCache }), null);
+    assert.equal(failCache.size, 0, 'un error no se guarda en la caché');
+    assert.equal(await getTmdbPerson(7, { apiKey: '', fetchImpl, cache: new Map() }), null);
+});
+
 test('person profile routes validate IDs and missing records', async () => {
     const invalidActor = await fetch(`${baseUrl}/actor/not-an-id`);
     const missingDirector = await fetch(`${baseUrl}/director/2147483647`);
 
     assert.equal(invalidActor.status, 400);
     assert.equal(missingDirector.status, 404);
+    assert.equal((await fetch(`${baseUrl}/persona/abc`)).status, 400);
+    assert.equal((await fetch(`${baseUrl}/persona/2147483647`)).status, 404);
 });
 
 test('movie detail renders PostgreSQL metadata and separate credits without duplicates', async () => {
@@ -226,7 +469,7 @@ test('movie detail renders PostgreSQL metadata and separate credits without dupl
     assert.match(body, /Palabras clave/);
     assert.match(body, /Equipo técnico/);
     assert.match(body, /Sin póster disponible/);
-    assert.equal((body.match(new RegExp(`href="/actor/${cast.rows[0].person_id}"`, 'g')) || []).length, 1);
+    assert.equal((body.match(new RegExp(`href="/persona/${cast.rows[0].person_id}"`, 'g')) || []).length, 1);
 });
 
 test('movie detail shows TMDB media and keeps PostgreSQL synopsis as an alternative', async () => {
@@ -549,7 +792,7 @@ test('search suggestions autocomplete movies, people, genres and keywords while 
     assert.deepEqual(all.body.suggestions[0], { type: 'genre', label: 'Acción', detail: 'Género', url: '/explorar?genero=28' });
     for (const suggestion of all.body.suggestions) {
         assert.ok(['genre', 'movie', 'actor', 'director', 'keyword'].includes(suggestion.type));
-        assert.match(suggestion.url, /^\/(pelicula|actor|director|explorar|buscar)[/?]/);
+        assert.match(suggestion.url, /^\/(pelicula|persona|explorar|buscar)[/?]/);
         assert.ok(suggestion.label && suggestion.detail);
     }
 
@@ -605,8 +848,8 @@ test('a TMDB-only movie shows its full credits and links only people that have a
 
     assert.equal(response.status, 200);
     assert.doesNotMatch(body, /Sin datos de elenco/);
-    assert.match(body, new RegExp(`href="/actor/${known.person_id}"`));
-    assert.match(body, new RegExp(`href="/director/${knownDirector.person_id}"`));
+    assert.match(body, new RegExp(`href="/persona/${known.person_id}"`));
+    assert.match(body, new RegExp(`href="/persona/${knownDirector.person_id}"`));
     assert.match(body, /<span>Actriz Sin Ficha<\/span>/);
     assert.match(body, /<span>Directora Sin Ficha<\/span>/);
     assert.doesNotMatch(body, /href="\/(actor|director)\/21000000(99|98)"/);

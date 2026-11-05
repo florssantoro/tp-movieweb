@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<%- include('partials/head', { pageTitle: person.person_name }) %>
+</head>
+<body>
+<%- include('partials/header') %>
+<%#
+    Página única de una persona (consigna 2.2): sus películas de la base como actor (con el personaje)
+    y como director (con el rol). Arriba y abajo se suma lo que trae TMDB (partials/person_tmdb.ejs).
+%>
+<%
+const initials = String(person.person_name || '?').trim().split(/\s+/).slice(0, 2).map((word) => word[0]).join('').toUpperCase();
+const female = locals.tmdbPerson?.gender === 'female';
+const roles = [
+    actingCredits.length ? (female ? 'Actriz' : 'Actor') : null,
+    directingCredits.length ? (female ? 'Directora' : 'Director') : null,
+].filter(Boolean);
+const movieCount = new Set([...actingCredits, ...directingCredits].map((credit) => credit.movie_id)).size;
+// Primero lo que más hace: según TMDB si lo sabe, si no según cuántas películas tiene en la base.
+const directingFirst = locals.tmdbPerson?.knownFor
+    ? locals.tmdbPerson.knownFor === 'Dirección'
+    : directingCredits.length > actingCredits.length;
+const groups = [
+    { key: 'acting', id: 'acting-heading', title: female ? 'Como actriz en MovieWeb' : 'Como actor en MovieWeb', label: 'Personaje', credits: actingCredits },
+    { key: 'directing', id: 'directing-heading', title: female ? 'Como directora en MovieWeb' : 'Como director en MovieWeb', label: 'Rol', credits: directingCredits },
+].filter((group) => group.credits.length);
+if (directingFirst) groups.reverse();
+%>
+
+<main class="page">
+    <div class="container">
+        <header class="profile-head">
+            <span class="avatar avatar-lg" aria-hidden="true"><%= initials %><img class="avatar-photo" src="/persona/<%= person.person_id %>/foto" alt="" width="176" height="176" decoding="async" fetchpriority="high" onload="this.classList.add('is-loaded')"></span>
+            <div>
+                <p class="eyebrow"><%= roles.join(' · ') %></p>
+                <h1><%= person.person_name %></h1>
+                <p class="profile-meta"><%= movieCount %> <%= movieCount === 1 ? 'película' : 'películas' %> en MovieWeb<% if (locals.tmdbPerson?.knownFor) { %> · <%= female ? 'Conocida' : 'Conocido' %> por: <%= locals.tmdbPerson.knownFor %><% } %></p>
+                <%- include('partials/person_tmdb', { tmdbPerson: locals.tmdbPerson || null, part: 'facts' }) %>
+            </div>
+        </header>
+
+        <%- include('partials/person_tmdb', { tmdbPerson: locals.tmdbPerson || null, part: 'bio' }) %>
+
+        <% groups.forEach((group) => { %>
+        <section class="section" aria-labelledby="<%= group.id %>">
+            <h2 class="section-title" id="<%= group.id %>"><%= group.title %> <span class="count"><%= group.credits.length %></span></h2>
+            <ul class="row-list">
+                <% group.credits.forEach((credit) => { %>
+                    <li class="row">
+                        <span class="row-year"><%= credit.release_date ? new Date(credit.release_date).getFullYear() : '—' %></span>
+                        <div class="row-body">
+                            <a class="row-title" href="/pelicula/<%= credit.movie_id %>"><%= credit.title %></a>
+                            <p class="row-detail"><strong><%= group.label %>:</strong> <%= credit.role || 'No especificado' %></p>
+                        </div>
+                    </li>
+                <% }); %>
+            </ul>
+        </section>
+        <% }); %>
+
+        <%- include('partials/person_tmdb', { tmdbPerson: locals.tmdbPerson || null, part: 'career', first: directingFirst ? 'directing' : 'acting' }) %>
+    </div>
+</main>
+
+<%- include('partials/footer') %>
+</body>
+</html>

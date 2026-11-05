@@ -14,7 +14,7 @@ const session = require('express-session');
 const PgSession = require('connect-pg-simple')(session);
 
 const { Pool } = require('pg');
-const { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto } = require('./tmdb');
+const { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto, getTmdbPerson, searchTmdbMovies } = require('./tmdb');
 const { logActivity, getTimeline, deleteUserActivity } = require('./activity');
 const reviewStore = require('./reviews');
 const { registerDiscovery, findGenres } = require('./discovery');
@@ -25,7 +25,23 @@ const sessionSecret = process.env.SESSION_SECRET || (process.env.NODE_ENV === 'p
 
 if (!sessionSecret) throw new Error('SESSION_SECRET es obligatorio en producción.');
 
-const escapeLikePattern = (value) => value.replace(/[\\%_]/g, '\\$&');
+// Búsqueda sin importar tildes ni mayúsculas: "darin" encuentra "Darín" y "DARÍN".
+// El texto buscado se convierte en una expresión regular donde cada vocal (y la ñ, la ç y la y) acepta
+// todas sus variantes con tilde: "darin" -> "dar[iíìïîÍÌÏÎ]n". Se compara con ~* (regex sin distinguir mayúsculas).
+// Es tan rápido como ILIKE y no necesita extensiones de PostgreSQL.
+const LETTER_VARIANTS = {
+    a: 'aáàäâãåÁÀÄÂÃÅ', e: 'eéèëêÉÈËÊ', i: 'iíìïîÍÌÏÎ', o: 'oóòöôõÓÒÖÔÕ', u: 'uúùüûÚÙÜÛ',
+    n: 'nñÑ', c: 'cçÇ', y: 'yýÿÝ',
+};
+const BASE_LETTER = new Map(Object.entries(LETTER_VARIANTS).flatMap(([base, variants]) =>
+    [...variants].map((letter) => [letter, base]).concat([[base.toUpperCase(), base]])));
+function accentInsensitivePattern(value) {
+    return [...String(value).slice(0, 100)].map((letter) => {
+        const base = BASE_LETTER.get(letter) || BASE_LETTER.get(letter.toLowerCase());
+        if (base) return `[${LETTER_VARIANTS[base]}]`;
+        return /[\\^$.|?*+()[\]{}]/.test(letter) ? `\\${letter}` : letter;
+    }).join('');
+}
 const validId = (value) => typeof value === 'string' && /^[1-9]\d*$/.test(value) && Number(value) <= 2147483647;
 const SEARCH_TYPES = new Set(['all', 'movie', 'actor', 'director', 'genre', 'keyword']);
 
@@ -173,9 +189,9 @@ app.get('/buscar/sugerencias', async (req, res) => {
         if (searchType === 'all') return SUGGESTION_LIMITS.all[type];
         return searchType === type ? SUGGESTION_LIMITS.single : 0;
     };
-    const escaped = escapeLikePattern(searchTerm);
+    const pattern = accentInsensitivePattern(searchTerm);
     // $1: empieza con el texto; $2: alguna palabra empieza con el texto.
-    const patterns = [`${escaped}%`, `% ${escaped}%`];
+    const patterns = [`^${pattern}`, ` ${pattern}`];
     const run = (type, query) => (limitFor(type) ? db.query(query, [...patterns, limitFor(type)]) : Promise.resolve({ rows: [] }));
 
     try {
@@ -183,32 +199,32 @@ app.get('/buscar/sugerencias', async (req, res) => {
             run('movie', `
                 SELECT movie_id, title, release_date
                 FROM movie
-                WHERE title ILIKE $1 ESCAPE '\\' OR title ILIKE $2 ESCAPE '\\'
-                ORDER BY (title ILIKE $1 ESCAPE '\\') DESC, vote_count DESC NULLS LAST, title
+                WHERE title ~* $1 OR title ~* $2
+                ORDER BY (title ~* $1) DESC, vote_count DESC NULLS LAST, title
                 LIMIT $3`),
             run('actor', `
                 SELECT person.person_id, person.person_name, COUNT(*) AS credits
                 FROM person
                 INNER JOIN movie_cast ON movie_cast.person_id = person.person_id
-                WHERE person.person_name ILIKE $1 ESCAPE '\\' OR person.person_name ILIKE $2 ESCAPE '\\'
+                WHERE person.person_name ~* $1 OR person.person_name ~* $2
                 GROUP BY person.person_id, person.person_name
-                ORDER BY (person.person_name ILIKE $1 ESCAPE '\\') DESC, COUNT(*) DESC, person.person_name
+                ORDER BY (person.person_name ~* $1) DESC, COUNT(*) DESC, person.person_name
                 LIMIT $3`),
             run('director', `
                 SELECT person.person_id, person.person_name, COUNT(*) AS credits
                 FROM person
                 INNER JOIN movie_crew ON movie_crew.person_id = person.person_id AND movie_crew.job = 'Director'
-                WHERE person.person_name ILIKE $1 ESCAPE '\\' OR person.person_name ILIKE $2 ESCAPE '\\'
+                WHERE person.person_name ~* $1 OR person.person_name ~* $2
                 GROUP BY person.person_id, person.person_name
-                ORDER BY (person.person_name ILIKE $1 ESCAPE '\\') DESC, COUNT(*) DESC, person.person_name
+                ORDER BY (person.person_name ~* $1) DESC, COUNT(*) DESC, person.person_name
                 LIMIT $3`),
             run('keyword', `
                 SELECT keyword.keyword_name, COUNT(*) AS movies
                 FROM keyword
                 INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
-                WHERE keyword.keyword_name ILIKE $1 ESCAPE '\\' OR keyword.keyword_name ILIKE $2 ESCAPE '\\'
+                WHERE keyword.keyword_name ~* $1 OR keyword.keyword_name ~* $2
                 GROUP BY keyword.keyword_name
-                ORDER BY (keyword.keyword_name ILIKE $1 ESCAPE '\\') DESC, COUNT(*) DESC, keyword.keyword_name
+                ORDER BY (keyword.keyword_name ~* $1) DESC, COUNT(*) DESC, keyword.keyword_name
                 LIMIT $3`),
         ]);
 
@@ -222,13 +238,18 @@ app.get('/buscar/sugerencias', async (req, res) => {
                 type: 'movie', label: movie.title, detail: year(movie.release_date) ? `Película · ${year(movie.release_date)}` : 'Película',
                 url: `/pelicula/${movie.movie_id}`,
             })),
-            ...actors.rows.map((person) => ({
-                type: 'actor', label: person.person_name, detail: `Actor · ${plural(person.credits, 'película', 'películas')}`,
-                url: `/actor/${person.person_id}`,
-            })),
-            ...directors.rows.map((person) => ({
+            ...actors.rows.map((person) => {
+                // Si también dirige, es una sola sugerencia: las dos cosas están en la misma página.
+                const alsoDirects = directors.rows.some((director) => director.person_id === person.person_id);
+                return {
+                    type: 'actor', label: person.person_name,
+                    detail: alsoDirects ? 'Actor y director' : `Actor · ${plural(person.credits, 'película', 'películas')}`,
+                    url: `/persona/${person.person_id}`,
+                };
+            }),
+            ...directors.rows.filter((person) => !actors.rows.some((actor) => actor.person_id === person.person_id)).map((person) => ({
                 type: 'director', label: person.person_name, detail: `Director · ${plural(person.credits, 'película', 'películas')}`,
-                url: `/director/${person.person_id}`,
+                url: `/persona/${person.person_id}`,
             })),
             ...keywords.rows.map((keyword) => ({
                 type: 'keyword', label: keyword.keyword_name, detail: `Palabra clave · ${plural(keyword.movies, 'película', 'películas')}`,
@@ -243,6 +264,56 @@ app.get('/buscar/sugerencias', async (req, res) => {
         res.status(500).json({ error: 'Error al buscar sugerencias.' });
     }
 });
+
+// Si una película no está en la base (por ejemplo, porque es muy nueva), se busca en TMDB y se incorpora a "movie"
+// (con sus géneros en "movie_genres"). Así aparece en los resultados y desde ahí funciona como cualquier otra.
+// Solo se incorporan películas con al menos 10 votos en TMDB, para no llenar la base de resultados sin importancia.
+// Devuelve los ids que TMDB encontró (para mostrarlos aunque el título en la base no coincida con lo buscado)
+// y cuántas películas se agregaron. Si TMDB no responde, la búsqueda sigue solo con la base.
+const TMDB_IMPORT_MIN_VOTES = 10;
+const TMDB_IMPORT_LIMIT = 5;
+
+async function importMoviesFromTmdb(searchTerm) {
+    try {
+        const found = (await (app.locals.searchTmdbMovies || searchTmdbMovies)(searchTerm))
+            .filter((movie) => movie.vote_count >= TMDB_IMPORT_MIN_VOTES)
+            .slice(0, 10);
+        if (!found.length) return { ids: [], added: 0 };
+
+        const existing = new Set((await db.query('SELECT movie_id FROM movie WHERE movie_id = ANY($1::int[])',
+            [found.map((movie) => movie.movie_id)])).rows.map((row) => row.movie_id));
+        let added = 0;
+        for (const movie of found.filter((candidate) => !existing.has(candidate.movie_id)).slice(0, TMDB_IMPORT_LIMIT)) {
+            // Una sola sentencia: inserta la película y, solo si era nueva, sus géneros (los que existen en "genre").
+            const result = await db.query(`
+                WITH new_movie AS (
+                    INSERT INTO movie (movie_id, title, overview, release_date, popularity, vote_average, vote_count)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (movie_id) DO NOTHING
+                    RETURNING movie_id
+                ), new_genres AS (
+                    INSERT INTO movie_genres (movie_id, genre_id)
+                    SELECT new_movie.movie_id, genre.genre_id
+                    FROM new_movie JOIN genre ON genre.genre_id = ANY($8::int[])
+                )
+                SELECT COUNT(*)::int AS inserted FROM new_movie`, [
+                movie.movie_id,
+                movie.title.slice(0, 1000),
+                movie.overview ? movie.overview.slice(0, 1000) : null,
+                movie.release_date,
+                movie.popularity === null ? null : Math.min(Math.max(movie.popularity, 0), 999999),
+                movie.vote_average === null ? null : Math.min(Math.max(Math.round(movie.vote_average * 100) / 100, 0), 99.99),
+                movie.vote_count,
+                movie.genre_ids,
+            ]);
+            added += result.rows[0].inserted;
+        }
+        return { ids: found.map((movie) => movie.movie_id), added };
+    } catch (err) {
+        console.warn('No se pudieron incorporar películas desde TMDB:', err.message);
+        return { ids: [], added: 0 };
+    }
+}
 
 app.get('/buscar', async (req, res) => {
     const searchTerm = String(req.query.q || '').trim();
@@ -269,14 +340,14 @@ app.get('/buscar', async (req, res) => {
         });
     }
 
-    const value = [`%${escapeLikePattern(searchTerm)}%`];
+    const value = [accentInsensitivePattern(searchTerm)];
     const searches = (type) => searchType === 'all' || searchType === type;
     const matchedGenres = searches('genre') ? findGenres(searchTerm) : [];
 
     const movieQuery = `
         SELECT movie_id, title
         FROM movie
-        WHERE title ILIKE $1 ESCAPE '\\'
+        WHERE title ~* $1 OR movie_id = ANY($2::int[])
         ORDER BY title ASC
         LIMIT 50`;
 
@@ -284,7 +355,7 @@ app.get('/buscar', async (req, res) => {
         SELECT DISTINCT person.person_id, person.person_name
         FROM person
         INNER JOIN movie_cast ON person.person_id = movie_cast.person_id
-        WHERE person.person_name ILIKE $1 ESCAPE '\\'
+        WHERE person.person_name ~* $1
         ORDER BY person.person_name ASC
         LIMIT 50`;
 
@@ -292,7 +363,7 @@ app.get('/buscar', async (req, res) => {
         SELECT DISTINCT person.person_id, person.person_name
         FROM person
         INNER JOIN movie_crew ON person.person_id = movie_crew.person_id
-        WHERE movie_crew.job = 'Director' AND person.person_name ILIKE $1 ESCAPE '\\'
+        WHERE movie_crew.job = 'Director' AND person.person_name ~* $1
         ORDER BY person.person_name ASC
         LIMIT 50`;
 
@@ -302,7 +373,7 @@ app.get('/buscar', async (req, res) => {
         FROM keyword
         INNER JOIN movie_keywords ON movie_keywords.keyword_id = keyword.keyword_id
         INNER JOIN movie ON movie.movie_id = movie_keywords.movie_id
-        WHERE keyword.keyword_name ILIKE $1 ESCAPE '\\'
+        WHERE keyword.keyword_name ~* $1
         GROUP BY movie.movie_id, movie.title, movie.release_date, movie.vote_count, movie.vote_average
         ORDER BY movie.vote_count DESC NULLS LAST, movie.vote_average DESC NULLS LAST, movie.title ASC
         LIMIT ${searchType === 'keyword' ? 48 : 12}`;
@@ -318,8 +389,10 @@ app.get('/buscar', async (req, res) => {
         LIMIT 12`;
 
     try {
+        // Primero se completan desde TMDB las películas que falten, así ya salen en la consulta de abajo.
+        const imported = searches('movie') ? await importMoviesFromTmdb(searchTerm) : { ids: [], added: 0 };
         const [movies, actors, directors, keywordMovies, genreMovies] = await Promise.all([
-            searches('movie') ? db.query(movieQuery, value) : Promise.resolve({ rows: [] }),
+            searches('movie') ? db.query(movieQuery, [...value, imported.ids]) : Promise.resolve({ rows: [] }),
             searches('actor') ? db.query(actorQuery, value) : Promise.resolve({ rows: [] }),
             searches('director') ? db.query(directorQuery, value) : Promise.resolve({ rows: [] }),
             searches('keyword') ? db.query(keywordMovieQuery, value) : Promise.resolve({ rows: [] }),
@@ -347,6 +420,7 @@ app.get('/buscar', async (req, res) => {
             emptySearch: false,
             searchQuery: searchTerm,
             searchType,
+            importedCount: imported.added,
         });
     } catch (err) {
         console.error(err);
@@ -386,7 +460,7 @@ app.get('/persona/:id/foto', async (req, res) => {
 });
 
 // Las personas que vienen de TMDB llevan link solo si su página existe en nuestra base:
-// /actor/:id necesita créditos en movie_cast y /director/:id necesita créditos como director.
+// /persona/:id necesita créditos en movie_cast o créditos como director.
 async function markLinkablePeople(cast, crew) {
     const ids = [...new Set([...cast, ...crew].map((person) => person.person_id))];
     if (ids.length === 0) return { cast, crew };
@@ -397,8 +471,8 @@ async function markLinkablePeople(cast, crew) {
     const actorIds = new Set(actors.rows.map((row) => row.person_id));
     const directorIds = new Set(directors.rows.map((row) => row.person_id));
     return {
-        cast: cast.map((person) => ({ ...person, linkable: actorIds.has(person.person_id) })),
-        crew: crew.map((person) => ({ ...person, linkable: person.job === 'Director' && directorIds.has(person.person_id) })),
+        cast: cast.map((person) => ({ ...person, linkable: actorIds.has(person.person_id) || directorIds.has(person.person_id) })),
+        crew: crew.map((person) => ({ ...person, linkable: person.job === 'Director' && (directorIds.has(person.person_id) || actorIds.has(person.person_id)) })),
     };
 }
 
@@ -499,21 +573,14 @@ app.get('/pelicula/:id', async (req, res) => {
     }
 });
 
-// Ruta para mostrar la página de un actor específico (PostgreSQL)
-app.get('/actor/:id', async (req, res) => {
-    const actorId = Number(req.params.id);
+// Página única de una persona (PostgreSQL + TMDB): sus películas como actor (con el personaje)
+// y como director (con el rol). Antes había una página para cada rol; ahora es una sola.
+app.get('/persona/:id', async (req, res) => {
+    const personId = Number(req.params.id);
+    if (!validId(req.params.id)) return res.status(400).send('ID de persona inválido.');
 
-    if (!validId(req.params.id)) {
-        return res.status(400).send('ID de actor inválido.');
-    }
-
-    const personQuery = `
-      SELECT person_id, person_name
-      FROM person
-      WHERE person_id = $1
-    `;
-
-    const creditsQuery = `
+    const personQuery = 'SELECT person_id, person_name FROM person WHERE person_id = $1';
+    const actingQuery = `
       SELECT
         movie.movie_id,
         movie.title,
@@ -529,42 +596,7 @@ app.get('/actor/:id', async (req, res) => {
       GROUP BY movie.movie_id, movie.title, movie.release_date
       ORDER BY movie.release_date DESC NULLS LAST, movie.title ASC
     `;
-
-    try {
-        const [personResult, creditsResult] = await Promise.all([
-            db.query(personQuery, [actorId]),
-            db.query(creditsQuery, [actorId]),
-        ]);
-
-        if (personResult.rows.length === 0 || creditsResult.rows.length === 0) {
-            return res.status(404).send('Actor no encontrado.');
-        }
-
-        res.render('actor', {
-            person: personResult.rows[0],
-            credits: creditsResult.rows,
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error al cargar las películas del actor.');
-    }
-});
-
-// Ruta para mostrar la página de un director específico (PostgreSQL)
-app.get('/director/:id', async (req, res) => {
-    const directorId = Number(req.params.id);
-
-    if (!validId(req.params.id)) {
-        return res.status(400).send('ID de director inválido.');
-    }
-
-    const personQuery = `
-      SELECT person_id, person_name
-      FROM person
-      WHERE person_id = $1
-    `;
-
-    const creditsQuery = `
+    const directingQuery = `
       SELECT DISTINCT
         movie.movie_id,
         movie.title,
@@ -577,24 +609,37 @@ app.get('/director/:id', async (req, res) => {
     `;
 
     try {
-        const [personResult, creditsResult] = await Promise.all([
-            db.query(personQuery, [directorId]),
-            db.query(creditsQuery, [directorId]),
+        // La biografía y la carrera completa vienen de TMDB; si no responde, la página se muestra igual.
+        const [personResult, actingResult, directingResult, tmdbPerson] = await Promise.all([
+            db.query(personQuery, [personId]),
+            db.query(actingQuery, [personId]),
+            db.query(directingQuery, [personId]),
+            Promise.resolve().then(() => (app.locals.loadTmdbPerson || getTmdbPerson)(personId)).catch(() => null),
         ]);
 
-        if (personResult.rows.length === 0 || creditsResult.rows.length === 0) {
-            return res.status(404).send('Director no encontrado.');
+        if (personResult.rows.length === 0 || (actingResult.rows.length === 0 && directingResult.rows.length === 0)) {
+            return res.status(404).send('Persona no encontrada.');
         }
 
-        res.render('director', {
+        res.render('persona', {
             person: personResult.rows[0],
-            credits: creditsResult.rows,
+            actingCredits: actingResult.rows,
+            directingCredits: directingResult.rows,
+            tmdbPerson,
         });
     } catch (err) {
         console.error(err);
-        res.status(500).send('Error al cargar las películas del director.');
+        res.status(500).send('Error al cargar la persona.');
     }
 });
+
+// Las direcciones viejas siguen funcionando: llevan a la página única de la persona.
+for (const route of ['actor', 'director']) {
+    app.get(`/${route}/:id`, (req, res) => {
+        if (!validId(req.params.id)) return res.status(400).send(`ID de ${route} inválido.`);
+        res.redirect(`/persona/${req.params.id}`);
+    });
+}
 
 // Las URLs anteriores siguen funcionando, pero convergen en el buscador único.
 // La búsqueda por palabra clave está integrada al buscador unificado (/buscar?tipo=keyword).

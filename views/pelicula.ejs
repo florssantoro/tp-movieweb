@@ -124,7 +124,7 @@ const primaryOverview = tmdb?.overview || movie.overview;
         <div class="movie-credit-groups">
             <div>
                 <h3>Dirección</h3>
-                <% if (directors.length) { %><ul class="movie-credits"><% directors.forEach((member) => { %><li><% if (member.linkable !== false) { %><a href="/director/<%= member.person_id %>"><%= member.person_name %></a><% } else { %><span><%= member.person_name %></span><% } %></li><% }); %></ul><% } else { %><p class="movie-muted">Sin datos.</p><% } %>
+                <% if (directors.length) { %><ul class="movie-credits"><% directors.forEach((member) => { %><li><% if (member.linkable !== false) { %><a href="/persona/<%= member.person_id %>"><%= member.person_name %></a><% } else { %><span><%= member.person_name %></span><% } %></li><% }); %></ul><% } else { %><p class="movie-muted">Sin datos.</p><% } %>
             </div>
             <div>
                 <h3>Guion</h3>
@@ -137,13 +137,13 @@ const primaryOverview = tmdb?.overview || movie.overview;
         <h2 id="cast-heading">Elenco <span class="movie-count"><%= cast.length %></span></h2>
         <% if (cast.length) { %>
             <ol class="movie-credits movie-credits-grid"><% featuredCast.forEach((actor) => { %>
-                <li><% if (actor.linkable !== false) { %><a href="/actor/<%= actor.person_id %>"><%= actor.person_name %></a><% } else { %><span><%= actor.person_name %></span><% } %><% if (actor.character_name) { %><small><%= actor.character_name %></small><% } %></li>
+                <li><% if (actor.linkable !== false) { %><a href="/persona/<%= actor.person_id %>"><%= actor.person_name %></a><% } else { %><span><%= actor.person_name %></span><% } %><% if (actor.character_name) { %><small><%= actor.character_name %></small><% } %></li>
             <% }); %></ol>
             <% if (additionalCast.length) { %>
                 <details class="movie-disclosure">
                     <summary>Ver elenco completo (<%= cast.length %>)</summary>
                     <ol class="movie-credits movie-credits-grid movie-credits-additional"><% additionalCast.forEach((actor) => { %>
-                        <li><% if (actor.linkable !== false) { %><a href="/actor/<%= actor.person_id %>"><%= actor.person_name %></a><% } else { %><span><%= actor.person_name %></span><% } %><% if (actor.character_name) { %><small><%= actor.character_name %></small><% } %></li>
+                        <li><% if (actor.linkable !== false) { %><a href="/persona/<%= actor.person_id %>"><%= actor.person_name %></a><% } else { %><span><%= actor.person_name %></span><% } %><% if (actor.character_name) { %><small><%= actor.character_name %></small><% } %></li>
                     <% }); %></ol>
                 </details>
             <% } %>

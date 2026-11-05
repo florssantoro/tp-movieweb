@@ -23,6 +23,10 @@ const hasResults = movies.length || genreMovies.length || keywordMovies.length |
             <p class="empty">Ingresá una película, persona o tema para buscar.</p>
         <% } else { %>
 
+        <% if (locals.importedCount) { %>
+            <p class="notice">Agregamos <%= locals.importedCount === 1 ? '1 película nueva' : `${locals.importedCount} películas nuevas` %> desde TMDB porque no estaban en la base.</p>
+        <% } %>
+
         <% if (!hasResults) { %>
             <p class="empty">No encontramos coincidencias. Probá con otro título, nombre o tema.</p>
         <% } else { %>
@@ -74,7 +78,7 @@ const hasResults = movies.length || genreMovies.length || keywordMovies.length |
             <ul class="person-grid">
                 <% actors.forEach((actor) => { %>
                     <li>
-                        <a class="person-card" href="/actor/<%= actor.person_id %>">
+                        <a class="person-card" href="/persona/<%= actor.person_id %>">
                             <span class="avatar" aria-hidden="true"><%= initials(actor.person_name) %><img class="avatar-photo" src="/persona/<%= actor.person_id %>/foto" alt="" width="80" height="80" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')"></span>
                             <%= actor.person_name %>
                         </a>
@@ -90,7 +94,7 @@ const hasResults = movies.length || genreMovies.length || keywordMovies.length |
             <ul class="person-grid">
                 <% directors.forEach((director) => { %>
                     <li>
-                        <a class="person-card" href="/director/<%= director.person_id %>">
+                        <a class="person-card" href="/persona/<%= director.person_id %>">
                             <span class="avatar" aria-hidden="true"><%= initials(director.person_name) %><img class="avatar-photo" src="/persona/<%= director.person_id %>/foto" alt="" width="80" height="80" loading="lazy" decoding="async" onload="this.classList.add('is-loaded')"></span>
                             <%= director.person_name %>
                         </a>

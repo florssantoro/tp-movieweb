@@ -51,7 +51,8 @@ test('movie template progressively reveals cast and groups crew by department', 
     assert.match(body, /Ver elenco completo \(13\)/);
     assert.ok(body.indexOf('Actor 12') < body.indexOf('movie-disclosure'));
     assert.ok(body.indexOf('Actor 13') > body.indexOf('movie-disclosure'));
-    assert.equal((body.match(/href="\/actor\//g) || []).length, 13);
+    // 13 actores + la directora: todos llevan a su página única de persona.
+    assert.equal((body.match(/href="\/persona\//g) || []).length, 14);
     assert.match(body, /Camera[\s\S]*Camarógrafa/);
     assert.match(body, /Sound[\s\S]*Compositor/);
 });

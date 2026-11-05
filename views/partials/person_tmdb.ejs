@@ -1,0 +1,95 @@
+<%#
+    Biografía, datos personales y carrera completa de una persona según TMDB.
+    Se usa en actor.ejs y director.ejs. Recibe:
+      tmdbPerson: lo que devuelve getTmdbPerson (tmdb.js), o null si TMDB no respondió.
+      part: 'facts' (datos debajo del nombre), 'bio' (biografía) o 'career' (carrera completa).
+      first: en 'career', qué grupo va primero ('acting' o 'directing').
+%>
+<% if (tmdbPerson && part === 'facts') { %>
+    <% if (tmdbPerson.birthday || tmdbPerson.placeOfBirth) { %>
+        <p class="person-facts">
+            <% if (tmdbPerson.birthday) { %>Nació el <%= tmdbPerson.birthday %><% if (tmdbPerson.age !== null && !tmdbPerson.deathday) { %> (<%= tmdbPerson.age %> años)<% } %><% } %><% if (tmdbPerson.placeOfBirth) { %><%= tmdbPerson.birthday ? ' en ' : 'Nació en ' %><%= tmdbPerson.placeOfBirth %><% } %>.
+            <% if (tmdbPerson.deathday) { %>Murió el <%= tmdbPerson.deathday %><% if (tmdbPerson.age !== null) { %>, a los <%= tmdbPerson.age %> años<% } %>.<% } %>
+        </p>
+    <% } %>
+    <% if (tmdbPerson.links.length) { %>
+        <p class="person-links">
+            <% tmdbPerson.links.forEach((link) => { %>
+                <a class="chip" href="<%= link.url %>" target="_blank" rel="noopener noreferrer"><%= link.label %> ↗</a>
+            <% }); %>
+        </p>
+    <% } %>
+<% } %>
+
+<% if (tmdbPerson && part === 'bio' && tmdbPerson.biography) { %>
+    <% const paragraphs = tmdbPerson.biography.split(/\n\s*\n|\r?\n/).map((p) => p.trim()).filter(Boolean); %>
+    <section class="section" aria-labelledby="bio-heading">
+        <h2 class="section-title" id="bio-heading">Biografía</h2>
+        <div class="bio">
+            <% if (tmdbPerson.biography.length > 700 && paragraphs.length > 1) { %>
+                <p><%= paragraphs[0] %></p>
+                <details class="bio-more">
+                    <summary>Leer la biografía completa</summary>
+                    <% paragraphs.slice(1).forEach((paragraph) => { %><p><%= paragraph %></p><% }); %>
+                </details>
+            <% } else { %>
+                <% paragraphs.forEach((paragraph) => { %><p><%= paragraph %></p><% }); %>
+            <% } %>
+            <% if (tmdbPerson.biographyLanguage === 'en') { %><p class="bio-note">TMDB no tiene esta biografía en español, por eso se muestra en inglés.</p><% } %>
+            <% if (tmdbPerson.alsoKnownAs.length) { %>
+                <p class="bio-note"><strong>Otros nombres:</strong> <%= tmdbPerson.alsoKnownAs.join(' · ') %></p>
+            <% } %>
+        </div>
+    </section>
+<% } %>
+
+<% if (tmdbPerson && part === 'career') { %>
+    <%
+    const female = tmdbPerson.gender === 'female';
+    const groups = [
+        { key: 'acting', title: female ? 'Como actriz' : 'Como actor', label: 'Personaje', credits: tmdbPerson.acting },
+        { key: 'directing', title: female ? 'Como directora' : 'Como director', label: 'Rol', credits: tmdbPerson.directing },
+        { key: 'other', title: 'Otros trabajos detrás de cámara', label: 'Rol', credits: tmdbPerson.otherCrew },
+    ].filter((group) => group.credits.length);
+    if (first === 'directing') groups.sort((a, b) => (b.key === 'directing') - (a.key === 'directing'));
+    const VISIBLE = 10;
+    %>
+    <% if (groups.length) { %>
+    <section class="section" aria-labelledby="career-heading">
+        <h2 class="section-title" id="career-heading">Carrera completa <span class="count">según TMDB</span></h2>
+        <p class="section-note">Todas sus películas, incluidas las que no están en nuestra base. Tocá cualquiera para ver su ficha.</p>
+        <% groups.forEach((group) => { %>
+            <div class="career-group">
+                <h3 class="career-title"><%= group.title %> <span class="count"><%= group.credits.length %></span></h3>
+                <ul class="row-list row-list-compact">
+                    <% group.credits.slice(0, VISIBLE).forEach((credit) => { %>
+                        <li class="row">
+                            <span class="row-year"><%= credit.year || 'Próx.' %></span>
+                            <div class="row-body">
+                                <a class="row-title" href="/pelicula/<%= credit.movie_id %>"><%= credit.title %></a>
+                                <% if (credit.role) { %><p class="row-detail"><strong><%= group.label %>:</strong> <%= credit.role %></p><% } %>
+                            </div>
+                        </li>
+                    <% }); %>
+                </ul>
+                <% if (group.credits.length > VISIBLE) { %>
+                    <details class="career-more">
+                        <summary>Ver <%= group.credits.length - VISIBLE %> más</summary>
+                        <ul class="row-list row-list-compact">
+                            <% group.credits.slice(VISIBLE).forEach((credit) => { %>
+                                <li class="row">
+                                    <span class="row-year"><%= credit.year || 'Próx.' %></span>
+                                    <div class="row-body">
+                                        <a class="row-title" href="/pelicula/<%= credit.movie_id %>"><%= credit.title %></a>
+                                        <% if (credit.role) { %><p class="row-detail"><strong><%= group.label %>:</strong> <%= credit.role %></p><% } %>
+                                    </div>
+                                </li>
+                            <% }); %>
+                        </ul>
+                    </details>
+                <% } %>
+            </div>
+        <% }); %>
+    </section>
+    <% } %>
+<% } %>

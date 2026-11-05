@@ -96,7 +96,7 @@ Usan la base PostgreSQL local (crean y borran sus propios datos de prueba) y un 
 | Consigna | Dónde se ve | Código |
 |---|---|---|
 | **2.1** Búsqueda de películas, actores y directores, en tres secciones | Buscador del header → `/buscar` (con autocompletado) | `app.js`, `views/resultado.ejs` |
-| **2.2** Perfil de actor y director con sus películas y rol | `/actor/:id`, `/director/:id` | `views/actor.ejs`, `views/director.ejs` |
+| **2.2** Perfil de actor y director con sus películas y rol | `/persona/:id`: una sola página por persona, con sus películas como actor (personaje) y como director (rol), más biografía y carrera completa de TMDB. `/actor/:id` y `/director/:id` redirigen ahí | `views/persona.ejs`, `views/partials/person_tmdb.ejs` |
 | **2.3** Ficha completa de la película + TMDB (póster, sinopsis, tráiler, enlaces) | `/pelicula/:id` | `views/pelicula.ejs`, `tmdb.js` |
 | **2.4** Búsqueda por palabra clave | Buscador del header con **"Palabras clave"** → `/buscar?tipo=keyword` (integrada al buscador unificado; `/keyword` redirige ahí) | `views/search_keyword.ejs` (inicio de la búsqueda, con palabras populares) y `views/resultados_keyword.ejs` (resultados), incluidas en `views/resultado.ejs` |
 | **2.5** Alta, baja y modificación de usuarios; favoritas, vistas, puntuación y opinión | `/registro`, `/login`, `/perfil`, `/perfil/editar`, botones de la ficha | `db/13`–`17`, `app.js` |

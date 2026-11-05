@@ -163,4 +163,182 @@ async function getTmdbPersonPhoto(personId, { apiKey = process.env.TMDB_API_KEY,
     }
 }
 
-module.exports = { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto, buildPosterUrl };
+// Busca películas por título en TMDB (para incorporar a la base las que no están, por ejemplo las más nuevas).
+// Pide los datos en inglés, igual que los títulos de la base de la cátedra.
+// Guarda cada búsqueda una hora para no repetir la llamada; si TMDB falla devuelve [] y no se guarda.
+const SEARCH_CACHE_LIMIT = 200;
+const SEARCH_CACHE_MS = 60 * 60_000;
+const searchCache = new Map();
+
+async function searchTmdbMovies(query, { apiKey = process.env.TMDB_API_KEY, fetchImpl = fetch, cache = searchCache } = {}) {
+    const term = typeof query === 'string' ? query.trim().slice(0, 100) : '';
+    if (!apiKey || term.length < 2) return [];
+    const key = term.toLowerCase();
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > Date.now()) return cached.movies;
+
+    try {
+        const url = new URL(`${TMDB_API}/search/movie`);
+        url.searchParams.set('api_key', apiKey);
+        url.searchParams.set('query', term);
+        url.searchParams.set('language', 'en-US');
+        url.searchParams.set('include_adult', 'false');
+        url.searchParams.set('page', '1');
+        const response = await fetchImpl(url, { signal: AbortSignal.timeout(2500) });
+        if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+        const data = await response.json();
+        const number = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+        const movies = (Array.isArray(data.results) ? data.results : [])
+            .filter((movie) => validPersonId(movie.id) && !movie.adult && text(movie.title))
+            .map((movie) => ({
+                movie_id: movie.id,
+                title: text(movie.title),
+                overview: text(movie.overview),
+                release_date: /^\d{4}-\d{2}-\d{2}$/.test(movie.release_date || '') ? movie.release_date : null,
+                popularity: number(movie.popularity),
+                vote_average: number(movie.vote_average),
+                vote_count: Number.isInteger(movie.vote_count) ? movie.vote_count : 0,
+                genre_ids: (Array.isArray(movie.genre_ids) ? movie.genre_ids : []).filter(validPersonId),
+            }));
+        if (cache.size >= SEARCH_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+        cache.set(key, { movies, expiresAt: Date.now() + SEARCH_CACHE_MS });
+        return movies;
+    } catch {
+        return [];
+    }
+}
+
+// ---------- Personas (actores, directores y equipo) ----------
+// Biografía, datos personales y la carrera completa en cine según TMDB.
+const PERSON_CACHE_LIMIT = 300;
+const PERSON_CACHE_MS = 6 * 60 * 60_000;
+const personCache = new Map();
+
+const DEPARTMENTS = {
+    Acting: 'Actuación', Directing: 'Dirección', Writing: 'Guion', Production: 'Producción', Sound: 'Sonido',
+    Camera: 'Fotografía', Editing: 'Montaje', Art: 'Arte', Crew: 'Equipo', 'Visual Effects': 'Efectos visuales',
+    'Costume & Make-Up': 'Vestuario y maquillaje', Lighting: 'Iluminación', Creator: 'Creación',
+};
+const JOBS = {
+    Director: 'Dirección', Screenplay: 'Guion', Writer: 'Guion', Story: 'Historia', Novel: 'Novela original',
+    Characters: 'Personajes', Producer: 'Producción', 'Executive Producer': 'Producción ejecutiva',
+    'Co-Producer': 'Coproducción', 'Original Music Composer': 'Música original', Music: 'Música',
+    'Director of Photography': 'Dirección de fotografía', Editor: 'Montaje', 'Casting': 'Casting',
+    'Thanks': 'Agradecimientos', 'Songs': 'Canciones', 'Theme Song Performance': 'Interpretación del tema principal',
+};
+const translateDepartment = (name) => DEPARTMENTS[name] || name;
+const translateJob = (name) => JOBS[name] || name;
+
+const dateParts = (value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+    return match ? new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))) : null;
+};
+const formatDate = (date) => date.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+function ageBetween(from, to) {
+    let age = to.getUTCFullYear() - from.getUTCFullYear();
+    if (to.getUTCMonth() < from.getUTCMonth() || (to.getUTCMonth() === from.getUTCMonth() && to.getUTCDate() < from.getUTCDate())) age -= 1;
+    return age;
+}
+
+// Ordena de la más nueva a la más vieja; las que no tienen fecha (en desarrollo) van primero.
+const byDateDesc = (a, b) => (b.release_date || '9999').localeCompare(a.release_date || '9999') || a.title.localeCompare(b.title);
+
+function mapMovieCredit(credit) {
+    const releaseDate = /^\d{4}-\d{2}-\d{2}$/.test(credit.release_date || '') ? credit.release_date : null;
+    return { movie_id: credit.id, title: text(credit.title), release_date: releaseDate, year: releaseDate ? Number(releaseDate.slice(0, 4)) : null };
+}
+
+function mapTmdbPerson(details, englishBiography, now = new Date()) {
+    const credits = details.movie_credits || {};
+    const valid = (credit) => validPersonId(credit.id) && text(credit.title) && !credit.adult;
+
+    // Como actor: una fila por película (si hizo varios personajes, se juntan).
+    const castByMovie = new Map();
+    for (const credit of (Array.isArray(credits.cast) ? credits.cast : []).filter(valid)) {
+        const current = castByMovie.get(credit.id) || { ...mapMovieCredit(credit), characters: [] };
+        const character = text(credit.character);
+        if (character && !current.characters.includes(character)) current.characters.push(character);
+        castByMovie.set(credit.id, current);
+    }
+    const acting = [...castByMovie.values()]
+        .map(({ characters, ...credit }) => ({ ...credit, role: characters.join(' / ') || null }))
+        .sort(byDateDesc);
+
+    // Detrás de cámara: una fila por película con todos sus trabajos; la dirección va aparte.
+    const crewByMovie = new Map();
+    for (const credit of (Array.isArray(credits.crew) ? credits.crew : []).filter((credit) => valid(credit) && text(credit.job))) {
+        const isDirecting = credit.job === 'Director';
+        const key = `${isDirecting ? 'directing' : 'other'}|${credit.id}`;
+        const current = crewByMovie.get(key) || { ...mapMovieCredit(credit), isDirecting, jobs: [] };
+        const job = translateJob(text(credit.job));
+        if (!current.jobs.includes(job)) current.jobs.push(job);
+        crewByMovie.set(key, current);
+    }
+    const crew = [...crewByMovie.values()].map(({ jobs, ...credit }) => ({ ...credit, role: jobs.join(', ') })).sort(byDateDesc);
+
+    const birth = dateParts(details.birthday);
+    const death = dateParts(details.deathday);
+    const biography = text(details.biography) || text(englishBiography);
+    const imdbId = details.external_ids?.imdb_id || details.imdb_id;
+    const instagram = details.external_ids?.instagram_id;
+
+    return {
+        name: text(details.name),
+        biography,
+        biographyLanguage: text(details.biography) ? 'es' : (biography ? 'en' : null),
+        knownFor: text(details.known_for_department) ? translateDepartment(details.known_for_department) : null,
+        gender: details.gender === 1 ? 'female' : details.gender === 2 ? 'male' : null,
+        birthday: birth ? formatDate(birth) : null,
+        deathday: death ? formatDate(death) : null,
+        age: birth ? ageBetween(birth, death || now) : null,
+        placeOfBirth: text(details.place_of_birth),
+        alsoKnownAs: (Array.isArray(details.also_known_as) ? details.also_known_as : []).map(text).filter(Boolean).slice(0, 4),
+        acting,
+        directing: crew.filter((credit) => credit.isDirecting).map(({ isDirecting, ...credit }) => credit),
+        otherCrew: crew.filter((credit) => !credit.isDirecting).map(({ isDirecting, ...credit }) => credit),
+        links: [
+            { label: 'TMDB', url: `https://www.themoviedb.org/person/${details.id}` },
+            ...(typeof imdbId === 'string' && /^nm\d+$/.test(imdbId) ? [{ label: 'IMDb', url: `https://www.imdb.com/name/${imdbId}/` }] : []),
+            ...(typeof instagram === 'string' && /^[A-Za-z0-9._]{1,30}$/.test(instagram) ? [{ label: 'Instagram', url: `https://www.instagram.com/${instagram}/` }] : []),
+        ],
+    };
+}
+
+async function getTmdbPerson(personId, { apiKey = process.env.TMDB_API_KEY, fetchImpl = fetch, cache = personCache, now } = {}) {
+    if (!apiKey || !validPersonId(personId)) return null;
+    const cached = cache.get(personId);
+    if (cached && cached.expiresAt > Date.now()) return cached.person;
+
+    async function request(language, append) {
+        const url = new URL(`${TMDB_API}/person/${personId}`);
+        url.searchParams.set('api_key', apiKey);
+        url.searchParams.set('language', language);
+        if (append) url.searchParams.set('append_to_response', 'movie_credits,external_ids');
+        // Las personas con muchas películas traen respuestas grandes (TMDB puede tardar varios segundos).
+        const response = await fetchImpl(url, { signal: AbortSignal.timeout(8000) });
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`TMDB HTTP ${response.status}`);
+        return response.json();
+    }
+
+    try {
+        const details = await request('es-AR', true);
+        if (!details || details.id !== personId) {
+            cache.set(personId, { person: null, expiresAt: Date.now() + PERSON_CACHE_MS });
+            return null;
+        }
+        // Si no hay biografía en español, se usa la de inglés (es opcional: si falla, sigue sin biografía).
+        let englishBiography = null;
+        if (!text(details.biography)) {
+            try { englishBiography = (await request('en-US', false))?.biography; } catch { /* sin biografía */ }
+        }
+        const person = mapTmdbPerson(details, englishBiography, now);
+        if (cache.size >= PERSON_CACHE_LIMIT) cache.delete(cache.keys().next().value);
+        cache.set(personId, { person, expiresAt: Date.now() + PERSON_CACHE_MS });
+        return person;
+    } catch {
+        return null;
+    }
+}
+
+module.exports = { getTmdbMovie, getTmdbPoster, getTmdbPersonPhoto, getTmdbPerson, searchTmdbMovies, buildPosterUrl };
