@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node app.js",
-    "test": "node --test"
+    "test": "node --test",
+    "dev:setup": "node scripts/dev-setup.js setup",
+    "dev:reset": "node scripts/dev-setup.js reset",
+    "dev:drop": "node scripts/dev-setup.js drop"
   },
   "keywords": [],
   "author": "",
