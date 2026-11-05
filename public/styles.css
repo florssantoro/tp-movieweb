@@ -892,3 +892,5 @@ body.movie-page { line-height: 1.55; }
 .review-author .avatar { width: 32px; height: 32px; font-size: 12px; }
 .review-date { margin-left: auto; color: var(--text-faint); font-size: 13px; }
 .review-text { margin: 0; color: var(--text); line-height: 1.6; overflow-wrap: anywhere; }
+.review-card-mine { border-color: rgba(121, 184, 243, 0.45); }
+.review-mine { padding: 2px 8px; border-radius: 999px; background: var(--accent-2-soft, rgba(121, 184, 243, 0.14)); color: var(--link); font-size: 12px; font-weight: 700; }

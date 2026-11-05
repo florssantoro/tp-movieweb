@@ -264,7 +264,8 @@ test('movie page shows other users reviews and the community average', async () 
         assert.match(html, /<strong>4<\/strong> \/ 5 · 2 puntuaciones/);
         assert.match(html, new RegExp(`href="/usuarios/${otherUserId}"[^>]*>.*${other.user_username}`));
         assert.match(html, /&lt;b&gt;Obra&lt;\/b&gt; maestra/, 'la opinión se muestra escapada');
-        assert.doesNotMatch(html, /Mi opinión/, 'la propia reseña no se repite en la lista');
+        assert.match(html, /review-card-mine[\s\S]*Tu reseña[\s\S]*Mi opinión/, 'la propia reseña aparece marcada');
+        assert.ok(html.indexOf('Mi opinión') < html.indexOf('Obra'), 'la propia reseña va primero');
 
         const anonymous = communityOf(await (await fetch(`${baseUrl}/pelicula/${movieId}`)).text());
         assert.match(anonymous, /Obra/);
