@@ -1,186 +1,175 @@
-# Bases de Datos 2026
+# MovieWeb · Grupo X
 
-## Trabajo Práctico: MovieWeb
+Trabajo práctico de **Bases de Datos y Recursos de Información 2026** (Universidad Austral).
+Aplicación web para buscar y explorar películas, actores y directores, con usuarios, reseñas y un timeline de actividad.
+Usa **PostgreSQL** (base relacional), **MongoDB** (base NoSQL) y la **API de TMDB**.
 
-### Objetivos
-El objetivo principal de este trabajo práctico es adquirir experiencia en el desarrollo de una aplicación web que interactúa con una base de datos `PostgreSQL`. La aplicación se llama **MovieWeb** y tiene como objetivo permitir a los usuarios buscar películas, actores y directores, explorar la información detallada de películas, y buscar películas relacionadas a través de palabras clave.
-También se pretende conocer el uso básico de bases de datos NoSQL, como MongoDB.
+## Integrantes
 
----
-
-### Instalación de software
-Para realizar el TP se deberá instalar el siguiente software:
-
-1.  **Node.js y npm (Node Package Manager):** para ejecutar la aplicación web en un servidor local.
-2.  **PostgreSQL:** para gestionar la base de datos `movies` que contiene la información de películas, actores, directores, etc.
-3.  **Un editor de código** (por ejemplo, `WebStorm`, `Visual Studio Code`, etc.) para escribir y editar código.
-4.  **MongoDB**: base de datos NoSQL.
+- Milo Blanco
+- Juan Manuel Gioino
+- Flor Santoro
+- Tomás Fernández Narice
 
 ---
 
-### Código provisto
-Se proporciona código prefabricado que servirá como punto de partida para el desarrollo de la aplicación MovieWeb. Este código incluye la estructura básica de la aplicación `Node.js` con las rutas, vistas y archivos estáticos necesarios. También se proporciona la base de datos `movies`.
+## Instalación y ejecución
 
----
+### Requisitos
 
-### Descripción de funcionalidades
+- **Node.js 18 o superior** (probado con Node 24) y npm.
+- **PostgreSQL** corriendo (probado con PostgreSQL 18).
+- **MongoDB** corriendo (probado con MongoDB 9). Sin MongoDB la app funciona igual, pero sin timeline ni búsqueda de reseñas.
+- Una clave de la **API de TMDB** (incluida en el `.env` de la entrega).
 
-1.  **Búsqueda de películas, actores y directores**
-    *   Modificar la página principal para que el buscador no solo busque nombres de películas, sino también nombres de personas que sean actores o directores.
-    *   Crear una página de resultados de búsqueda que liste los resultados separados en secciones: películas, actores y directores.
+### 1. Clonar el repositorio (o descomprimir el .zip)
 
-2.  **Páginas de personas (actores y directores)**
-    *   Al hacer clic en una persona (actor o director) en la página de resultados de búsqueda, se debe mostrar la página de esa persona.
-    *   En la página de la persona, listar las películas en las que esa persona ha participado como actor o director.
-
-3.  **Información detallada de películas**
-    *   Modificar la página de películas para que incluya todos los datos de la película, incluyendo género, país de producción, etc. Mostrar toda la información contenida en las tablas de la base de datos `movies`.
-
-4.  **Búsqueda de películas por palabras clave**
-    *   Incluir un buscador de palabras clave (keywords) que devuelva como resultado las películas relacionadas con la palabra de búsqueda.
-
-5.  **Registro de actividad del usuario**
-    * Registrar tres tipos de actividades del usuario usando MongoDB (ver punto 3 de las Instrucciones).
-
----
-
-### Instrucciones
-Se deben completar las siguientes tareas como parte de este TP:
-
-#### 1. Configuración del entorno:
-*   Instalar `Node.js`.
-*   Instalar `PostgreSQL` y la base de datos `movies` (ver instrucciones en carpeta `db`).
-*   Instalar `MongoDB`.
-*   Descargar el código proporcionado y configurar el entorno de desarrollo.
-*   Instalar dependencias y ejecutar la aplicación:
-
-    ```bash
-    # Instalar dependencias del proyecto
-    npm install
-    
-    # Ejecutar la aplicación
-    node app.js
-    ```
-
-#### 2. Desarrollo de funcionalidades:
-*   Modificar el código existente para habilitar la búsqueda de películas, actores y directores en la página principal (`index.ejs` y `app.js`).
-*   Modificar la página de resultados de búsqueda (`resultado.ejs`) para mostrar los resultados separados en secciones (películas, actores, directores).
-*   Desarrollar la funcionalidad para mostrar la lista de películas en las que una persona (actor o director) ha participado al hacer clic en su nombre. Página de actor (`actor.ejs`) y director (`director.ejs`).
-*   Mejorar la página de película (`pelicula.ejs`) para mostrar toda la información contenida en la base de datos `movies`.
-*   Integrar la búsqueda por palabras clave al buscador general para devolver películas relacionadas junto con películas, actores y directores.
-*   Crear las tablas y archivos necesarios para permitir la creación, modificación y borrado de usuarios (`user_id`, `user_username`, `user_name`, `user_email`) y las películas que les gustan (`movie_user`). Debe ser posible listar los usuarios, las películas asociadas a los usuarios, la puntuación que asignaron a una determinada película y la opinión sobre esa película.
-
----
-
-### 3. Registro de actividad del usuario (Timeline con MongoDB)
-
-#### Descripción:
-Crear una página de perfil de usuario donde se muestre un "timeline" o feed de su actividad reciente en el sitio. Esta actividad puede ser de 3 diferentes tipos:
-- *"calificó la película X con 4 estrellas"*
-- *"añadió la película Y a su lista de favoritos"*
-- *"escribió una reseña para la película Z"*
-
-#### Usar MongoDB tiene algunas ventajas
-**Diversidad de estructuras de datos:** cada tipo de evento de actividad tiene datos asociados diferentes. Una calificación tiene una puntuación, una reseña tiene texto, y un "favorito" es una acción simple.
-
-**Esquema flexible:** cada evento puede ser un documento en una colección `user_activity` con una estructura que se adapte al tipo de evento. No hay columnas vacías ni `JOIN`s innecesarios.
-
-**Consultas simples para feeds:** para obtener el timeline de un usuario basta con hacer un `find({ userId: "..." })` en la colección y ordenarlo por fecha, por ejemplo.
-
-#### Ejemplo de documentos en MongoDB (Colección: `user_activity`)
-
-```json
-// Evento de calificación
-{
-  "_id": ObjectId("..."),
-  "userId": "user_abc",
-  "type": "RATED_MOVIE",
-  "timestamp": ISODate("2023-10-27T12:00:00Z"),
-  "details": {
-    "movieId": 54321,
-    "movieTitle": "El Origen",
-    "rating": 5
-  }
-}
-
-// Evento de reseña
-{
-  "_id": ObjectId("..."),
-  "userId": "user_abc",
-  "type": "WROTE_REVIEW",
-  "timestamp": ISODate("2023-10-26T18:45:00Z"),
-  "details": {
-    "movieId": 67890,
-    "movieTitle": "Parásitos",
-    "reviewId": "review_1122" // ID que apunta a otra colección o sistema
-  }
-}
-
-// Evento de añadido a favoritos
-{
-  "_id": ObjectId("..."),
-  "userId": "user_abc",
-  "type": "ADDED_TO_FAVORITES",
-  "timestamp": ISODate("2023-10-25T09:30:00Z"),
-  "details": {
-    "movieId": 12345,
-    "movieTitle": "El Señor de los Anillos: La Comunidad del Anillo"
-  }
-}
+```bash
+git clone https://github.com/florssantoro/tp-movieweb.git
+cd tp-movieweb
 ```
 
----
+### 2. Instalar las dependencias
 
-## Puesta en marcha
-
-### 1. Dependencias
 ```bash
 npm install
 ```
 
-### 2. Variables de entorno
-Copiar `.env.example` a `.env` y completar los valores. El archivo `.env` no se sube al repositorio.
+### 3. Configurar el archivo `.env`
+
+La entrega ya incluye un `.env` listo. Si hace falta crearlo, copiar el modelo `.env.example` a `.env` y completar los valores:
 
 | Variable | Para qué sirve |
 |---|---|
-| `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_DATABASE` | Conexión a PostgreSQL |
-| `SESSION_SECRET` | Firma de las sesiones de login. Cualquier texto largo y aleatorio |
-| `TMDB_API_KEY` | Opcional. Pósters, tráileres y sinopsis en español ([themoviedb.org](https://www.themoviedb.org) → Configuración → API) |
-| `MONGO_URL`, `MONGO_DB` | Conexión a MongoDB para el timeline (ej. `mongodb://localhost:27017` y `movieweb`) |
+| `PORT` | Puerto de la app (por defecto `3500`) |
+| `DB_USER`, `DB_PASSWORD`, `DB_HOST`, `DB_PORT`, `DB_DATABASE` | Conexión a PostgreSQL. La base se llama `movies` |
+| `TMDB_API_KEY` | Pósters, tráileres, fotos de actores y sinopsis en español |
+| `SESSION_SECRET` | Firma de las sesiones de login (cualquier texto largo y aleatorio) |
+| `MONGO_URL`, `MONGO_DB` | Conexión a MongoDB (ej. `mongodb://localhost:27017` y `movieweb`) |
 
-### 3. PostgreSQL
-Crear la base `movies` y, desde la carpeta `db`, ejecutar:
+> **Importante:** completar `DB_USER` y `DB_PASSWORD` con el usuario y la contraseña del PostgreSQL de la computadora donde se va a correr.
+
+### 4. Configuración automática del entorno
+
 ```bash
-psql --single-transaction -d movies -U postgres -f 00_load_all.sql
+npm run dev:setup
 ```
-`00_load_all.sql` carga las películas y también las tablas de usuarios (`13_users.sql`, `14_movie_interactions.sql` y `15_user_auth.sql`). Ver `db/README.md` para actualizar una base existente.
 
-### 4. MongoDB
-Alcanza con tener el servidor de MongoDB corriendo y las variables `MONGO_URL` y `MONGO_DB` en el `.env`. La base, la colección `user_activity` y su índice `{ userId: 1, timestamp: -1 }` se crean solos con el primer evento.
+Este script (`scripts/dev-setup.js`):
 
-### 5. Ejecutar
+1. Crea la base `movies` si no existe.
+2. Carga las películas la primera vez (los scripts `db/01` a `db/12` que provee la cátedra, en el orden de `00_load_all.sql`). Tarda menos de un minuto.
+3. Crea las tablas del grupo (`db/13` a `db/17`) y carga datos de prueba (`db/18_seed_demo.sql`).
+4. Prepara MongoDB: crea los índices, copia las reseñas a la colección `reviews` y carga actividad de prueba.
+
+Se puede correr las veces que haga falta: no borra ni duplica datos.
+
+**Usuarios de prueba:** `demo_ana` y `demo_bruno`, los dos con la contraseña `movieweb123`.
+
+Otros comandos útiles para la corrección:
+
+| Comando | Qué hace |
+|---|---|
+| `npm run dev:drop` | Borra solo lo que agregó el grupo: las tablas de usuarios (`db/99_drop_tables.sql`) y las colecciones de MongoDB. No toca las películas |
+| `npm run dev:reset` | Borra todo y lo vuelve a cargar desde cero |
+
+### 5. Iniciar la aplicación
+
 ```bash
 npm start
 ```
-La aplicación queda en http://localhost:3500.
+
+Queda en **http://localhost:3500**.
+
+### 6. Tests (opcional)
 
 ```bash
 npm test
 ```
-Los tests usan la base PostgreSQL local, pero no el MongoDB real: lo reemplazan por uno falso.
 
-### Timeline de actividad con MongoDB
-- **PostgreSQL guarda el estado actual** de cada usuario con cada película (`movie_user`): si es favorita, la puntuación y la opinión.
-- **MongoDB guarda el historial** en la colección `user_activity`: cada cambio es un documento nuevo.
+Usan la base PostgreSQL local (crean y borran sus propios datos de prueba) y un MongoDB falso, así que no necesitan MongoDB corriendo.
 
-Al guardar una interacción (`POST /pelicula/:id/interaccion`), la aplicación compara el estado anterior con el nuevo y registra solo lo que cambió:
+---
 
-| Cambio | `type` | `details` |
+## Funcionalidades
+
+| Consigna | Dónde se ve | Código |
 |---|---|---|
-| La película pasa a ser favorita | `ADDED_TO_FAVORITES` | `movieId`, `movieTitle` |
-| Cambia la puntuación | `RATED_MOVIE` | `movieId`, `movieTitle`, `rating` |
-| Cambia la opinión | `WROTE_REVIEW` | `movieId`, `movieTitle`, `opinion` |
+| **2.1** Búsqueda de películas, actores y directores, en tres secciones | Buscador del header → `/buscar` (con autocompletado) | `app.js`, `views/resultado.ejs` |
+| **2.2** Perfil de actor y director con sus películas y rol | `/actor/:id`, `/director/:id` | `views/actor.ejs`, `views/director.ejs` |
+| **2.3** Ficha completa de la película + TMDB (póster, sinopsis, tráiler, enlaces) | `/pelicula/:id` | `views/pelicula.ejs`, `tmdb.js` |
+| **2.4** Búsqueda por palabra clave | Buscador del header con **"Palabras clave"** → `/buscar?tipo=keyword` (integrada al buscador unificado; `/keyword` redirige ahí) | `views/search_keyword.ejs` (inicio de la búsqueda, con palabras populares) y `views/resultados_keyword.ejs` (resultados), incluidas en `views/resultado.ejs` |
+| **2.5** Alta, baja y modificación de usuarios; favoritas, vistas, puntuación y opinión | `/registro`, `/login`, `/perfil`, `/perfil/editar`, botones de la ficha | `db/13`–`17`, `app.js` |
+| **3.1** Timeline de actividad en MongoDB (3 tipos de evento) | Perfil del usuario, sección "Actividad reciente" | `activity.js` |
+| **3.2** Reseñas en MongoDB: búsqueda, actualización y borrado | `/resenas` (menú "Reseñas") | `reviews.js`, `views/resenas.ejs` |
 
-El perfil del usuario (`/perfil` y `/usuarios/:id`) muestra los últimos 20 eventos en la sección "Actividad reciente", con `find({ userId }).sort({ timestamp: -1 })`. El código está en `activity.js`.
+Extras: portada con tendencias de TMDB, Explorar por género, "¿Qué ver?" con sugerencias personalizadas, Mi lista, reseñas de la comunidad en cada película y fichas completas (vía TMDB) de películas que no están en la base.
 
-Si MongoDB no está disponible, la aplicación sigue funcionando: las interacciones se guardan en PostgreSQL y el perfil muestra un aviso en lugar del timeline.
+---
+
+## Diseño de las bases de datos
+
+### PostgreSQL: tablas agregadas por el grupo
+
+```
+users      ( user_id PK, user_username UNIQUE, user_name, user_email UNIQUE, password_hash )
+movie_user ( user_id FK → users, movie_id FK → movie, rating 1..5, opinion,
+             is_favorite, watch_status ('want_to_watch' | 'watched'), created_at, updated_at,
+             PK (user_id, movie_id) )
+session    ( sesiones de login, la crea connect-pg-simple )
+```
+
+- `movie_user` resuelve la relación **N:M** entre usuarios y películas (es la tabla `user_movies` de la consigna). La **PK compuesta** hace que haya una sola relación por usuario y película.
+- `ON DELETE CASCADE`: al borrar un usuario o una película se borran sus relaciones.
+- `CHECK` en `rating` (1 a 5) y en `watch_status`; índices únicos sin distinguir mayúsculas en username y email.
+- Un **trigger** actualiza `updated_at` cada vez que cambia la relación.
+- Las contraseñas se guardan solo como **hash bcrypt**. Todas las consultas son **parametrizadas** (`$1`, `$2`…), sin riesgo de inyección SQL.
+
+### MongoDB: colecciones
+
+**`user_activity`**: el timeline. Un documento por evento, con un `details` distinto según el tipo:
+
+```js
+{ userId: 3, type: "RATED_MOVIE", timestamp: ISODate("..."),
+  details: { movieId: 157336, movieTitle: "Interstellar", rating: 5 } }
+{ userId: 3, type: "WROTE_REVIEW", timestamp: ISODate("..."),
+  details: { movieId: 157336, movieTitle: "Interstellar", reviewId: "6730...", opinion: "..." } }
+{ userId: 3, type: "ADDED_TO_FAVORITES", timestamp: ISODate("..."),
+  details: { movieId: 238, movieTitle: "The Godfather" } }
+```
+
+Índice `{ userId: 1, timestamp: -1 }` para leer el timeline con `find({ userId }).sort({ timestamp: -1 })`.
+
+**`reviews`**: las reseñas como documentos, para buscarlas, editarlas y borrarlas:
+
+```js
+{ userId: 3, username: "demo_ana", movieId: 157336, movieTitle: "Interstellar",
+  rating: 5, text: "...", createdAt: ISODate("..."), updatedAt: ISODate("...") }
+```
+
+Índice único `{ userId: 1, movieId: 1 }` (una reseña por usuario y película) e índice `{ updatedAt: -1 }`.
+
+### Cómo conviven las dos bases
+
+- **PostgreSQL guarda el estado actual**: si la película es favorita, si está vista, la puntuación y la opinión breve (consigna 2.5).
+- **MongoDB guarda el historial** (`user_activity`) y **las reseñas como documentos** (`reviews`, consigna 3.2).
+- Cada vez que una reseña se crea, se edita o se borra, `app.js` actualiza las dos bases. El evento `WROTE_REVIEW` guarda el `reviewId` del documento de la reseña.
+- Si MongoDB no responde, la app sigue funcionando con PostgreSQL y lo avisa en pantalla.
+
+---
+
+## Estructura del proyecto
+
+```
+app.js               Servidor Express: rutas y consultas a PostgreSQL
+activity.js          Conexión a MongoDB y timeline (user_activity)
+reviews.js           Reseñas en MongoDB (reviews)
+tmdb.js              Cliente de la API de TMDB (con caché)
+discovery.js         Portada, Explorar, ¿Qué ver? y Mi lista
+scripts/dev-setup.js npm run dev:setup / dev:reset / dev:drop
+db/                  Scripts SQL (00_load_all.sql carga todo; 99_drop_tables.sql borra lo agregado)
+views/               Vistas EJS
+public/              CSS, JavaScript del navegador e imágenes
+test/                Tests (npm test)
+docs/                Consigna original y notas
+```
