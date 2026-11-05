@@ -157,13 +157,18 @@ function registerDiscovery(app, db, requireAuth) {
         const order = req.query.orden || 'rating';
         if (!Number.isInteger(page) || page < 1 || page > 500 || (req.query.genero && !genre) || !['rating', 'popular'].includes(order)) return res.status(400).send('Filtros inválidos.');
         try {
-            const result = await db.query(`SELECT m.* FROM movie m WHERE m.vote_count >= 200
-                AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id = $1))
-                ORDER BY ${order === 'popular' ? 'm.popularity' : 'm.vote_average'} DESC NULLS LAST, m.movie_id
-                LIMIT 25 OFFSET $2`, [genre?.id || null, (page - 1) * 24]);
+            const genreFilter = 'AND ($1::int IS NULL OR EXISTS (SELECT 1 FROM movie_genres g WHERE g.movie_id = m.movie_id AND g.genre_id = $1))';
+            const [result, count] = await Promise.all([
+                db.query(`SELECT m.* FROM movie m WHERE m.vote_count >= 200 ${genreFilter}
+                    ORDER BY ${order === 'popular' ? 'm.popularity' : 'm.vote_average'} DESC NULLS LAST, m.movie_id
+                    LIMIT 25 OFFSET $2`, [genre?.id || null, (page - 1) * 24]),
+                // El total permite mostrar "N películas" y "Página X de Y".
+                db.query(`SELECT COUNT(*)::int AS total FROM movie m WHERE m.vote_count >= 200 ${genreFilter}`, [genre?.id || null]),
+            ]);
+            const total = count.rows[0].total;
             const paginationQuery = new URLSearchParams({ orden: order });
             if (genre) paginationQuery.set('genero', genre.id);
-            res.render('explorar', { title: genre ? `Películas de ${genre.name.toLowerCase()}` : 'Mejor puntuadas', movies: cards(result.rows.slice(0,24)), genres, genre, order, page, hasNext: result.rows.length > 24, paginationQuery: paginationQuery.toString() });
+            res.render('explorar', { title: genre ? `Películas de ${genre.name.toLowerCase()}` : 'Todo el catálogo', movies: cards(result.rows.slice(0,24)), genres, genre, order, page, hasNext: result.rows.length > 24, paginationQuery: paginationQuery.toString(), total, totalPages: Math.max(1, Math.ceil(total / 24)) });
         } catch (error) { next(error); }
     });
     app.get('/que-ver', async (req, res, next) => {

@@ -1,1 +1,49 @@
-<!DOCTYPE html><html lang="es"><head><%- include('partials/head', { pageTitle: title }) %></head><body><%- include('partials/header') %><main class="discovery container"><a href="/">← Inicio</a><header class="discovery-intro"><p class="eyebrow">EXPLORÁ EL CATÁLOGO</p><h1><%= title %></h1><p>Películas con al menos 200 votos. Encontrá tu próxima historia.</p></header><form class="discovery-filters" method="GET" action="/explorar"><div class="field"><label for="genre">Género</label><select class="select" name="genero" id="genre"><option value="">Todos</option><% genres.forEach((g) => { %><option value="<%= g.id %>" <%= genre?.id === g.id ? 'selected' : '' %>><%= g.name %></option><% }); %></select></div><div class="field"><label for="order">Ordenar</label><select class="select" name="orden" id="order"><option value="rating" <%= order === 'rating' ? 'selected' : '' %>>Mejor puntuadas</option><option value="popular" <%= order === 'popular' ? 'selected' : '' %>>Más populares</option></select></div><button class="btn" type="submit">Aplicar</button></form><%- include('partials/movie_cards', { movies }) %><nav class="pagination" aria-label="Páginas"><% if (page > 1) { %><a class="btn btn-ghost" href="/explorar?<%= paginationQuery %>&page=<%= page - 1 %>">← Anterior</a><% } %><span>Página <%= page %></span><% if (hasNext) { %><a class="btn btn-ghost" href="/explorar?<%= paginationQuery %>&page=<%= page + 1 %>">Siguiente →</a><% } %></nav></main><%- include('partials/footer') %></body></html>
+<!DOCTYPE html>
+<html lang="es">
+<head><%- include('partials/head', { pageTitle: title }) %></head>
+<body>
+<%- include('partials/header') %>
+<%
+// Arma el link de un filtro manteniendo el otro (género + orden). Siempre vuelve a la página 1.
+const exploreLink = ({ genero = genre?.id, orden = order } = {}) => {
+    const params = new URLSearchParams();
+    if (genero) params.set('genero', genero);
+    if (orden !== 'rating') params.set('orden', orden);
+    const query = params.toString();
+    return query ? `/explorar?${query}` : '/explorar';
+};
+const pageLink = (number) => `/explorar?${paginationQuery}&page=${number}`;
+%>
+<main class="discovery container">
+    <header class="explore-head">
+        <p class="eyebrow">Explorá el catálogo</p>
+        <h1><%= title %></h1>
+        <p><%= total.toLocaleString('es-AR') %> <%= total === 1 ? 'película' : 'películas' %> con al menos 200 votos · ordenadas por <%= order === 'popular' ? 'popularidad' : 'mejor puntuación' %></p>
+    </header>
+
+    <div class="explore-controls">
+        <nav class="segmented" aria-label="Ordenar">
+            <a href="<%= exploreLink({ orden: 'rating' }) %>" <%- order === 'rating' ? 'aria-current="page"' : '' %>>Mejor puntuadas</a>
+            <a href="<%= exploreLink({ orden: 'popular' }) %>" <%- order === 'popular' ? 'aria-current="page"' : '' %>>Más populares</a>
+        </nav>
+        <nav class="genre-chips" aria-label="Géneros">
+            <a href="<%= exploreLink({ genero: null }) %>" <%- !genre ? 'aria-current="page"' : '' %>>Todos</a>
+            <% genres.forEach((g) => { %>
+                <a href="<%= exploreLink({ genero: g.id }) %>" <%- genre?.id === g.id ? 'aria-current="page"' : '' %>><%= g.name %></a>
+            <% }); %>
+        </nav>
+    </div>
+
+    <%- include('partials/movie_cards', { movies }) %>
+
+    <% if (totalPages > 1) { %>
+    <nav class="pagination" aria-label="Páginas">
+        <% if (page > 1) { %><a class="btn btn-ghost" href="<%= pageLink(page - 1) %>">← Anterior</a><% } %>
+        <span>Página <strong><%= page %></strong> de <%= totalPages %></span>
+        <% if (hasNext) { %><a class="btn btn-ghost" href="<%= pageLink(page + 1) %>">Siguiente →</a><% } %>
+    </nav>
+    <% } %>
+</main>
+<%- include('partials/footer') %>
+</body>
+</html>
