@@ -125,12 +125,12 @@ async function setup(client) {
         const removed = (await reviews.deleteMany(keep.length ? { $nor: keep } : {})).deletedCount;
         done(`${rows.length} reseñas sincronizadas${removed ? ` (${removed} viejas borradas)` : ''}`);
 
-        // Actividad de prueba para los usuarios demo, solo si todavía no tienen.
+        // Actividad de prueba para los usuarios de prueba (email @movieweb.test), solo si todavía no tienen.
         const demo = (await client.query(`SELECT u.user_id, mu.movie_id, m.title, mu.rating, mu.opinion, mu.is_favorite, mu.updated_at
             FROM movies.users u
             JOIN movies.movie_user mu ON mu.user_id = u.user_id
             JOIN movies.movie m ON m.movie_id = mu.movie_id
-            WHERE u.user_username IN ('demo_ana', 'demo_bruno')`)).rows;
+            WHERE u.user_email LIKE '%@movieweb.test'`)).rows;
         let inserted = 0;
         for (const row of demo) {
             if (await activity.countDocuments({ userId: row.user_id, 'details.movieId': row.movie_id })) continue;
@@ -155,7 +155,8 @@ async function setup(client) {
     const counts = (await client.query(`SELECT (SELECT COUNT(*) FROM movies.movie)::int AS movies,
         (SELECT COUNT(*) FROM movies.users)::int AS users, (SELECT COUNT(*) FROM movies.movie_user)::int AS interactions`)).rows[0];
     console.log(`\n✅ Listo: ${counts.movies} películas, ${counts.users} usuarios, ${counts.interactions} interacciones.`);
-    console.log('   Usuarios de prueba: demo_ana / demo_bruno (contraseña: movieweb123)');
+    console.log('   Usuarios de prueba: demo_ana, demo_bruno, sofi.cine, nico_films, cami.martinez, juanpi.rojas, lu.fernandez, tomi.vera');
+    console.log('   Contraseña de todos: movieweb123');
     console.log('   Iniciá la app con: npm start');
 }
 
