@@ -1,4 +1,4 @@
-# MovieWeb · Grupo X
+# MovieWeb
 
 Trabajo práctico de **Bases de Datos y Recursos de Información 2026** (Universidad Austral).
 Aplicación web para buscar y explorar películas, actores y directores, con usuarios, reseñas y un timeline de actividad.
