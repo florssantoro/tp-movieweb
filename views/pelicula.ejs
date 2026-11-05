@@ -45,10 +45,32 @@ const primaryOverview = tmdb?.overview || movie.overview;
                 <% if (movie.runtime != null) { %><p><strong>Duración</strong> <%= movie.runtime %> min</p><% } %>
                 <% if (formattedDate) { %><p><strong>Estreno</strong> <%= formattedDate %></p><% } %>
             </div>
+            <% if (ratingsAvailable) { const quick = locals.interaction || {}; %>
+            <div class="movie-actions">
+                <% if (locals.selectedUser) { %>
+                    <form action="/pelicula/<%= movie.movie_id %>/estado" method="POST">
+                        <input type="hidden" name="toggle" value="favorite">
+                        <button class="action-toggle action-favorite" type="submit" aria-pressed="<%= quick.is_favorite ? 'true' : 'false' %>"><span aria-hidden="true">♥</span><%= quick.is_favorite ? 'En favoritas' : 'Favorita' %></button>
+                    </form>
+                    <form action="/pelicula/<%= movie.movie_id %>/estado" method="POST">
+                        <input type="hidden" name="toggle" value="watched">
+                        <button class="action-toggle action-watched" type="submit" aria-pressed="<%= quick.watch_status === 'watched' ? 'true' : 'false' %>"><span aria-hidden="true">✓</span><%= quick.watch_status === 'watched' ? 'Vista' : 'Marcar como vista' %></button>
+                    </form>
+                    <form action="/pelicula/<%= movie.movie_id %>/estado" method="POST">
+                        <input type="hidden" name="toggle" value="want_to_watch">
+                        <button class="action-toggle action-want" type="submit" aria-pressed="<%= quick.watch_status === 'want_to_watch' ? 'true' : 'false' %>"><span aria-hidden="true">+</span><%= quick.watch_status === 'want_to_watch' ? 'En tu lista' : 'Quiero ver' %></button>
+                    </form>
+                <% } else { %>
+                    <a class="action-toggle action-favorite" href="/login"><span aria-hidden="true">♥</span>Favorita</a>
+                    <a class="action-toggle action-watched" href="/login"><span aria-hidden="true">✓</span>Marcar como vista</a>
+                    <a class="action-toggle action-want" href="/login"><span aria-hidden="true">+</span>Quiero ver</a>
+                <% } %>
+            </div>
+            <% } %>
             <div class="movie-links">
                 <% if (tmdb?.url) { %><a href="<%= tmdb.url %>" target="_blank" rel="noopener noreferrer">Ficha en TMDB ↗</a><% } %>
                 <% if (tmdb?.trailerUrl) { %><a href="#trailer">Ver tráiler ↓</a><% } %>
-                <a href="#rate-heading">Guardar o valorar ↓</a>
+                <a href="#rate-heading">Escribir reseña ↓</a>
             </div>
         </div>
     </div>
@@ -144,27 +166,18 @@ const primaryOverview = tmdb?.overview || movie.overview;
     
     <section class="movie-section" aria-labelledby="rate-heading">
         <% const activeUser = locals.selectedUser || null; const savedInteraction = locals.interaction || null; %>
-        <h2 id="rate-heading">Tu relación con esta película</h2>
+        <h2 id="rate-heading">Tu reseña</h2>
         <% if (!ratingsAvailable) { %>
             <p class="movie-muted">Las interacciones no están disponibles temporalmente.</p>
         <% } else if (!activeUser) { %>
             <div class="auth-callout">
-                <p>Ingresá a tu cuenta para guardar esta película, puntuarla o escribir una opinión.</p>
+                <p>Ingresá a tu cuenta para puntuar esta película o escribir una opinión.</p>
                 <div class="form-actions"><a class="btn" href="/login">Ingresar</a><a class="btn btn-ghost" href="/registro">Crear cuenta</a></div>
             </div>
         <% } else { const saved = savedInteraction || {}; %>
-            <form class="form-card movie-rate" action="/pelicula/<%= movie.movie_id %>/interaccion" method="POST">
+            <form class="form-card movie-rate" action="/pelicula/<%= movie.movie_id %>/calificar" method="POST">
                 <p class="interaction-summary"><strong><%= activeUser.user_username %></strong> · <%= savedInteraction ? [saved.is_favorite ? 'Favorita' : '', saved.watch_status === 'want_to_watch' ? 'Quiero ver' : saved.watch_status === 'watched' ? 'Vista' : '', saved.rating ? `${saved.rating}/5` : '', saved.opinion ? 'Con opinión' : ''].filter(Boolean).join(' · ') || 'Sin estados guardados' : 'Todavía no guardaste esta película' %></p>
-                <label class="favorite-control"><input type="checkbox" name="is_favorite" <%= saved.is_favorite ? 'checked' : '' %>> Favorita</label>
                 <div class="form-row">
-                    <div class="field">
-                        <label for="watch-status">En tu lista</label>
-                        <select class="select" id="watch-status" name="watch_status">
-                            <option value="">Sin estado</option>
-                            <option value="want_to_watch" <%= saved.watch_status === 'want_to_watch' ? 'selected' : '' %>>Quiero ver</option>
-                            <option value="watched" <%= saved.watch_status === 'watched' ? 'selected' : '' %>>Vista</option>
-                        </select>
-                    </div>
                     <div class="field">
                         <label for="rate-stars">Puntuación</label>
                         <select class="select" id="rate-stars" name="rating">
@@ -181,7 +194,7 @@ const primaryOverview = tmdb?.overview || movie.overview;
                     <small id="opinion-help" class="movie-muted">Opcional · Hasta 1000 caracteres.</small>
                 </div>
                 <div class="form-actions">
-                    <button class="btn" type="submit" name="action" value="save">Guardar cambios</button>
+                    <button class="btn" type="submit">Guardar reseña</button>
                 </div>
             </form>
             <% if (savedInteraction) { %>

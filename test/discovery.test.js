@@ -91,7 +91,7 @@ test('a TMDB-only movie can be viewed without writes then saved in the authentic
     assert.match(list,/Discovery fixture/);
     const savedDetail = await (await fetch(`${base}/pelicula/${remoteId}`,{headers:{cookie}})).text();
     assert.match(savedDetail,/100 min/);
-    assert.match(savedDetail,/value="want_to_watch" selected/);
+    assert.match(savedDetail,/action-want" type="submit" aria-pressed="true"/);
 });
 test('trending handles unavailable API and rejects adult or invalid entries', async () => {
     assert.deepEqual(await loadTrending({apiKey:''}),[]);

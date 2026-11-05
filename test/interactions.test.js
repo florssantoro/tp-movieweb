@@ -38,8 +38,8 @@ test('interaction lifecycle preserves independent states and legacy ratings', as
     const detail = await fetch(`${baseUrl}/pelicula/238`, { headers: { cookie } });
     const html = await detail.text();
     assert.equal(detail.status, 200);
-    assert.match(html, /name="is_favorite" checked/);
-    assert.match(html, /value="want_to_watch" selected/);
+    assert.match(html, /action-favorite" type="submit" aria-pressed="true"/);
+    assert.match(html, /action-want" type="submit" aria-pressed="true"/);
     assert.match(html, /value="4" selected/);
     assert.match(html, /&lt;script&gt;opinión&lt;\/script&gt;/);
     assert.doesNotMatch(html, /<script>opinión/);
@@ -210,3 +210,37 @@ test('migration supports a fresh installation and preserves existing rows when r
         client.release();
     }
 });
+
+test('favorite, watched and want-to-watch buttons work independently of the review', async () => {
+    await db.query('DELETE FROM movie_user WHERE user_id = $1 AND movie_id = 238', [userId]);
+    const toggle = (value) => post({ toggle: value }, 'estado');
+    const state = (is_favorite, watch_status, rating, opinion) => [{ is_favorite, watch_status, rating, opinion }];
+
+    assert.equal((await toggle('favorite')).status, 302);
+    assert.deepEqual(await saved(), state(true, null, null, null), 'favorita sin reseña');
+
+    assert.equal((await post({ rating: '4', opinion: 'Buena' }, 'calificar')).status, 302);
+    assert.deepEqual(await saved(), state(true, null, 4, 'Buena'), 'la reseña no toca la favorita');
+
+    await toggle('watched');
+    assert.deepEqual(await saved(), state(true, 'watched', 4, 'Buena'), 'marcar vista no toca la reseña');
+    await toggle('want_to_watch');
+    assert.deepEqual(await saved(), state(true, 'want_to_watch', 4, 'Buena'), '"Quiero ver" reemplaza a "Vista"');
+    await toggle('want_to_watch');
+    await toggle('favorite');
+    assert.deepEqual(await saved(), state(false, null, 4, 'Buena'), 'apagar los botones conserva la reseña');
+
+    await post({ rating: '', opinion: '' }, 'calificar');
+    assert.deepEqual(await saved(), [], 'sin reseña ni estados, la relación se borra');
+
+    await toggle('watched');
+    await toggle('watched');
+    assert.deepEqual(await saved(), [], 'apagar el único estado también la borra');
+
+    assert.equal((await toggle('otra-cosa')).status, 400);
+    const anonymous = await fetch(`${baseUrl}/pelicula/238/estado`, {
+        method: 'POST', redirect: 'manual', body: new URLSearchParams({ toggle: 'favorite' }),
+    });
+    assert.equal(anonymous.headers.get('location'), '/login');
+});
+
