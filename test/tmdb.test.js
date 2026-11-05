@@ -21,7 +21,7 @@ test('TMDB details use Spanish trailer when available', async () => {
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].searchParams.get('language'), 'es-AR');
-    assert.equal(calls[0].searchParams.get('append_to_response'), 'videos');
+    assert.equal(calls[0].searchParams.get('append_to_response'), 'videos,credits,keywords');
     assert.equal(result.posterUrl, 'https://image.tmdb.org/t/p/w500/poster.jpg');
     assert.equal(result.trailerUrl, 'https://www.youtube.com/watch?v=abcdefghijk');
     assert.equal(result.overview, 'Sinopsis en español');
@@ -113,4 +113,45 @@ test('TMDB person photo lookup returns a small profile image and caches it', asy
     assert.equal(second, first);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].pathname, '/3/person/192');
+});
+
+test('TMDB details include cast, crew and the technical sheet in the PostgreSQL format', async () => {
+    const result = await getTmdbMovie(55, {
+        apiKey: 'test-key',
+        fetchImpl: async () => ({
+            ok: true,
+            json: async () => ({
+                id: 55, title: 'Película remota', original_language: 'es', budget: 1000, revenue: 5000, popularity: 12.5,
+                videos: { results: [{ site: 'YouTube', type: 'Trailer', key: 'abcdefghijk' }] },
+                credits: {
+                    cast: [
+                        { id: 2, name: 'Segunda', character: 'Rol B', order: 1 },
+                        { id: 1, name: 'Primera', character: 'Rol A', order: 0 },
+                        { id: -5, name: 'Inválida', character: 'X', order: 2 },
+                    ],
+                    crew: [
+                        { id: 9, name: 'Directora', job: 'Director', department: 'Directing' },
+                        { id: 9, name: 'Directora', job: 'Director', department: 'Directing' },
+                        { id: 8, name: 'Guionista', job: 'Screenplay', department: 'Writing' },
+                    ],
+                },
+                keywords: { keywords: [{ id: 1, name: 'heist' }] },
+                production_countries: [{ iso_3166_1: 'AR', name: 'Argentina' }],
+                spoken_languages: [{ iso_639_1: 'es', name: 'Español', english_name: 'Spanish' }, { iso_639_1: 'en', name: 'English' }],
+                production_companies: [{ id: 3, name: 'Productora' }],
+            }),
+        }),
+    });
+
+    assert.deepEqual(result.cast.map((person) => person.person_name), ['Primera', 'Segunda']);
+    assert.deepEqual(result.cast[0], { person_id: 1, person_name: 'Primera', character_name: 'Rol A', cast_order: 0 });
+    assert.deepEqual(result.crew, [
+        { person_id: 9, person_name: 'Directora', job: 'Director', department_name: 'Directing' },
+        { person_id: 8, person_name: 'Guionista', job: 'Screenplay', department_name: 'Writing' },
+    ]);
+    assert.deepEqual(result.keywords, [{ keyword_name: 'heist' }]);
+    assert.deepEqual(result.countries, [{ country_name: 'Argentina', country_iso_code: 'AR' }]);
+    assert.deepEqual(result.languages.map((l) => `${l.language_name} (${l.language_role})`), ['Español (Original)', 'English (Spoken)']);
+    assert.deepEqual(result.companies, [{ company_name: 'Productora' }]);
+    assert.equal(result.movie.budget, 1000);
 });

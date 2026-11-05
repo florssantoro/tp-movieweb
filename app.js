@@ -354,6 +354,23 @@ app.get('/persona/:id/foto', async (req, res) => {
     res.redirect(photoUrl);
 });
 
+// Las personas que vienen de TMDB llevan link solo si su página existe en nuestra base:
+// /actor/:id necesita créditos en movie_cast y /director/:id necesita créditos como director.
+async function markLinkablePeople(cast, crew) {
+    const ids = [...new Set([...cast, ...crew].map((person) => person.person_id))];
+    if (ids.length === 0) return { cast, crew };
+    const [actors, directors] = await Promise.all([
+        db.query('SELECT DISTINCT person_id FROM movie_cast WHERE person_id = ANY($1::int[])', [ids]),
+        db.query("SELECT DISTINCT person_id FROM movie_crew WHERE job = 'Director' AND person_id = ANY($1::int[])", [ids]),
+    ]);
+    const actorIds = new Set(actors.rows.map((row) => row.person_id));
+    const directorIds = new Set(directors.rows.map((row) => row.person_id));
+    return {
+        cast: cast.map((person) => ({ ...person, linkable: actorIds.has(person.person_id) })),
+        crew: crew.map((person) => ({ ...person, linkable: person.job === 'Director' && directorIds.has(person.person_id) })),
+    };
+}
+
 app.get('/pelicula/:id', async (req, res) => {
     const movieId = Number(req.params.id);
     if (!/^[1-9]\d*$/.test(req.params.id) || !Number.isInteger(movieId) || movieId > 2147483647) {
@@ -365,8 +382,11 @@ app.get('/pelicula/:id', async (req, res) => {
         if (movieResult.rows.length === 0) {
             const remote = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
             if (remote?.movie) {
+                // La película no está en la base: toda la ficha sale de TMDB.
+                const people = await markLinkablePeople(remote.cast || [], remote.crew || []);
                 return res.render('pelicula', { movie: remote.movie, tmdb: remote, genres: remote.genres || [],
-                    cast: [], crew: [], countries: [], languages: [], companies: [], keywords: [], users: [],
+                    cast: people.cast, crew: people.crew, countries: remote.countries || [], languages: remote.languages || [],
+                    companies: remote.companies || [], keywords: remote.keywords || [], users: [],
                     ratingsAvailable: (await loadRatingUsers()).available, selectedUser: res.locals.currentUser, interaction: null });
             }
             return res.status(404).send('Película no encontrada.');
@@ -410,6 +430,11 @@ app.get('/pelicula/:id', async (req, res) => {
         const tmdb = await (app.locals.loadTmdbMovie || getTmdbMovie)(movieId);
         const ratingUsers = await (app.locals.loadRatingUsers || loadRatingUsers)();
         const selectedUser = ratingUsers.available ? res.locals.currentUser : null;
+        // Una película guardada desde TMDB está en la base sin elenco: se completa con TMDB, como los géneros.
+        const people = cast.rows.length || crew.rows.length
+            ? { cast: cast.rows, crew: crew.rows }
+            : await markLinkablePeople(tmdb?.cast || [], tmdb?.crew || []);
+        const orTmdb = (result, key) => (result.rows.length ? result.rows : tmdb?.[key] || []);
         let interaction = null;
         if (selectedUser) {
             const result = await db.query(
@@ -422,13 +447,13 @@ app.get('/pelicula/:id', async (req, res) => {
         res.render('pelicula', {
             movie: Object.fromEntries(Object.entries({ ...tmdb?.movie, ...movieResult.rows[0] }).map(([key, value]) =>
                 [key, value ?? tmdb?.movie?.[key] ?? null])),
-            cast: cast.rows,
-            crew: crew.rows,
-            genres: genres.rows.length ? genres.rows : tmdb?.genres || [],
-            countries: countries.rows,
-            languages: languages.rows,
-            companies: companies.rows,
-            keywords: keywords.rows,
+            cast: people.cast,
+            crew: people.crew,
+            genres: orTmdb(genres, 'genres'),
+            countries: orTmdb(countries, 'countries'),
+            languages: orTmdb(languages, 'languages'),
+            companies: orTmdb(companies, 'companies'),
+            keywords: orTmdb(keywords, 'keywords'),
             tmdb,
             users: ratingUsers.users,
             ratingsAvailable: ratingUsers.available,
